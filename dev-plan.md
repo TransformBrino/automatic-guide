@@ -19,9 +19,9 @@
 | P5 | 查询与审核 | 4 | 11 个 API 接口全部可用且权限边界正确 | P4 |
 | P6 | 前端单页 | 7 | 浏览器四 Tab 全功能可用，移动端适配 | P5 |
 | P7 | 部署上线 | 3 | 内网通过 Nginx 访问，PM2 守护运行 | P6 |
-| P8 | 优化改进 | 10 | 真实 Bug 清零 + 体验短板补齐 | P7 |
+| P8 | 优化改进 | 10 | 全部 10 项优化改进完成 | P7 |
 
-**总任务数**：45 个。每个任务均可独立验收、独立提交。
+**总任务数**：45 个（P0-P7 共 35 个 + P8 共 10 个）。每个任务均可独立验收、独立提交。
 
 ---
 
@@ -1001,12 +1001,12 @@ module.exports = {
 | 🟡 P2 | P8-T16 | 相关条目推荐（SQL 版） | ✅ | `GET /api/entries/:id/related` 接口 + 详情底部展示 |
 | 🟡 P2 | P8-T17 | 条目详情 Markdown 渲染 | ✅ | marked.js CDN + `renderMarkdown()` 函数 + 详情/审核面板 |
 | 🟡 P2 | P8-T18 | 搜索加时间范围筛选 | ✅ | `created_after`/`created_before` 参数 + 前端日期输入 |
-| 🟡 P2 | P8-T19 | 我的提交 Tab 独立显示 | 小（前端） | 不再复用 KB Tab 筛选，改为独立 Tab 视图 |
-| 🟡 P2 | P8-T20 | 已审核条目评分雷达图 | 中（前端 Chart） | 用 Canvas 或 SVG 画六维评分图 |
+| 🟡 P2 | P8-T19 | 我的提交 Tab 独立显示 | ✅ | 独立 Tab 面板 + 分页 + 详情查看 |
+| 🟡 P2 | P8-T20 | 已审核条目评分雷达图 | ✅ | Canvas 六维雷达图（纯原生，无外部依赖） |
 | 🟡 P2 | P8-T21 | JWT 临近过期提醒 | ✅ | `checkTokenExpiry()` 解码 exp + 30/10 分钟 toast 警告 |
-| 🟢 P3 | P8-T22 | 操作日志页面 | 中（后端+前端） | 调用 `kb_audit_log` 表展示操作记录 |
-| 🟢 P3 | P8-T23 | 会话持久化（文件/Redis） | 中（后端） | 当前 Map 存内存，重启丢失 |
-| 🟢 P3 | P8-T24 | 禁用的用户 token 立即失效 | 中（后端） | JWT 黑名单或每次请求查 `is_active` |
+| 🟢 P3 | P8-T22 | 操作日志页面 | ✅ | `GET /api/admin/audit-logs` + 管理后台 Tab |
+| 🟢 P3 | P8-T23 | 会话持久化（文件） | ✅ | 每 30s 写文件 + 启动恢复 + 进程退出保存 |
+| 🟢 P3 | P8-T24 | 禁用的用户 token 立即失效 | ✅ | `authRequired` 每次请求查 `is_active` |
 
 ---
 
@@ -1133,12 +1133,12 @@ module.exports = {
 | P8-T16 | 相关条目推荐 | ✅ | 2026-07-28 | `GET /api/entries/:id/related` + 前端展示 |
 | P8-T17 | Markdown 渲染 | ✅ | 2026-07-28 | marked.js + `renderMarkdown()` |
 | P8-T18 | 时间范围筛选 | ✅ | 2026-07-28 | `created_after`/`created_before` + 日期输入 |
-| P8-T19 | 我的提交独立 Tab | 🚧 | - | - |
-| P8-T20 | 评分雷达图 | 🚧 | - | - |
+| P8-T19 | 我的提交独立 Tab | ✅ | 2026-07-28 | 独立 Tab 面板 + 分页 + 详情查看 |
+| P8-T20 | 评分雷达图 | ✅ | 2026-07-28 | Canvas 六维雷达图（纯原生） |
 | P8-T21 | JWT 过期提醒 | ✅ | 2026-07-28 | `checkTokenExpiry()` + `startTokenCheck()` |
-| P8-T22 | 操作日志页面 | 🚧 | - | - |
-| P8-T23 | 会话持久化 | 🚧 | - | - |
-| P8-T24 | 禁用用户 token 失效 | 🚧 | - | - |
+| P8-T22 | 操作日志页面 | ✅ | 2026-07-28 | `GET /api/admin/audit-logs` + 管理后台 Tab |
+| P8-T23 | 会话持久化 | ✅ | 2026-07-28 | 文件持久化（每 30s 写 + 启动恢复） |
+| P8-T24 | 禁用用户 token 失效 | ✅ | 2026-07-28 | `authRequired` 每次请求查 `is_active` |
 
 ---
 
