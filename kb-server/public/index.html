@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#1a73e8">
+<title>智能知识库管理系统</title>
+<style>
+:root{--primary:#1a73e8;--primary-dark:#1557b0;--success:#34a853;--danger:#ea4335;--warning:#fbbc04;--bg:#f8f9fa;--card:#fff;--border:#e0e0e0;--text:#202124;--text-secondary:#5f6368;--text-light:#9aa0a6;--shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.06);--shadow-hover:0 4px 12px rgba(0,0,0,.12);--radius:8px;--radius-lg:12px;--transition:all .2s ease}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+input,textarea,select{font-family:inherit;font-size:14px;outline:none}
+a{color:var(--primary);text-decoration:none}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:#dadce0;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#bdc1c6}
+
+/* ========== 登录页 ========== */
+.login-page{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:20px}
+.login-card{background:#fff;border-radius:var(--radius-lg);padding:40px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.login-logo{text-align:center;margin-bottom:28px}
+.login-logo-icon{width:56px;height:56px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));border-radius:16px;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:28px;margin-bottom:12px}
+.login-logo h1{font-size:20px;font-weight:600;color:var(--text)}
+.login-logo p{font-size:13px;color:var(--text-secondary);margin-top:4px}
+.form-group{margin-bottom:18px}
+.form-group label{display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px;font-weight:500}
+.form-group input{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:15px;transition:var(--transition);background:#fafafa}
+.form-group input:focus{border-color:var(--primary);background:#fff;box-shadow:0 0 0 3px rgba(26,115,232,.1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 20px;border-radius:var(--radius);font-size:14px;font-weight:500;transition:var(--transition);cursor:pointer;border:1px solid transparent}
+.btn-primary{background:var(--primary);color:#fff;width:100%;padding:12px;font-size:15px}
+.btn-primary:hover{background:var(--primary-dark);box-shadow:0 2px 8px rgba(26,115,232,.3)}
+.btn-primary:active{transform:scale(.98)}
+.btn-primary:disabled{background:#bdc1c6;cursor:not-allowed}
+.btn-outline{background:#fff;color:var(--primary);border:1px solid var(--primary)}
+.btn-outline:hover{background:rgba(26,115,232,.04)}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover{background:#d32f2f}
+.btn-success{background:var(--success);color:#fff}
+.btn-success:hover{background:#2d8e47}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-block{width:100%}
+.error-msg{color:var(--danger);font-size:13px;margin-top:10px;padding:8px 12px;background:rgba(234,67,53,.08);border-radius:var(--radius);display:none}
+.error-msg.show{display:block}
+
+/* ========== 主应用 ========== */
+.app{display:none;height:100vh;flex-direction:column}
+.app.show{display:flex}
+.app-header{background:#fff;border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:56px;flex-shrink:0;box-shadow:var(--shadow)}
+.app-title{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600}
+.app-title-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px}
+.app-nav{display:flex;gap:4px}
+.nav-tab{padding:8px 16px;border-radius:var(--radius);font-size:14px;color:var(--text-secondary);font-weight:500;transition:var(--transition);white-space:nowrap}
+.nav-tab:hover{background:rgba(0,0,0,.04);color:var(--text)}
+.nav-tab.active{background:var(--primary);color:#fff}
+.nav-tab.hidden{display:none}
+.app-user{display:flex;align-items:center;gap:12px}
+.user-info{display:flex;align-items:center;gap:8px}
+.user-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+.user-details{display:flex;flex-direction:column;line-height:1.2}
+.user-name{font-size:13px;font-weight:500}
+.user-role{font-size:11px;color:var(--text-secondary);background:#f1f3f4;padding:2px 8px;border-radius:10px}
+.logout-btn{color:var(--text-secondary);font-size:13px;padding:6px 12px;border-radius:var(--radius)}
+.logout-btn:hover{background:rgba(0,0,0,.04);color:var(--danger)}
+.app-content{flex:1;overflow:auto;background:var(--bg)}
+.tab-panel{display:none;padding:20px;max-width:1400px;margin:0 auto}
+.tab-panel.active{display:block}
+
+/* ========== Tab1 对话 ========== */
+.chat-container{display:flex;flex-direction:column;height:calc(100vh - 56px - 40px);max-width:900px;margin:0 auto}
+.chat-messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
+.chat-welcome{text-align:center;padding:40px 20px;color:var(--text-secondary)}
+.chat-welcome-icon{font-size:48px;margin-bottom:16px;opacity:.6}
+.chat-welcome h2{font-size:18px;margin-bottom:8px;color:var(--text)}
+.chat-welcome p{font-size:14px;line-height:1.6}
+.message{max-width:80%;display:flex;gap:10px}
+.message.user{align-self:flex-end;flex-direction:row-reverse}
+.message-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;font-weight:600;color:#fff}
+.message.user .message-avatar{background:linear-gradient(135deg,#667eea,#764ba2)}
+.message.ai .message-avatar{background:linear-gradient(135deg,var(--primary),var(--primary-dark))}
+.message-content{display:flex;flex-direction:column;gap:4px;min-width:0}
+.message-bubble{padding:12px 16px;border-radius:12px;line-height:1.6;font-size:14px;white-space:pre-wrap;word-break:break-word}
+.message.user .message-bubble{background:var(--primary);color:#fff;border-bottom-right-radius:4px}
+.message.ai .message-bubble{background:#fff;border:1px solid var(--border);border-bottom-left-radius:4px;box-shadow:var(--shadow)}
+.message-time{font-size:11px;color:var(--text-light);padding:0 4px}
+.message.user .message-time{text-align:right}
+.message-card{border-radius:12px;padding:14px 16px;background:#fff;border:1px solid var(--border);box-shadow:var(--shadow)}
+.message-card.success{border-left:4px solid var(--success)}
+.message-card.error{border-left:4px solid var(--danger)}
+.message-card.info{border-left:4px solid var(--primary)}
+.message-card-title{font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.message-card.success .message-card-title{color:var(--success)}
+.message-card.error .message-card-title{color:var(--danger)}
+.message-card.info .message-card-title{color:var(--primary)}
+.message-card-body{font-size:13px;color:var(--text-secondary)}
+.message-card-body .entry-item{padding:8px;background:#f8f9fa;border-radius:6px;margin-bottom:6px;cursor:pointer;transition:var(--transition)}
+.message-card-body .entry-item:hover{background:#e8f0fe}
+.message-card-body .entry-item-title{font-weight:500;color:var(--text);font-size:13px}
+.message-card-body .entry-item-summary{font-size:12px;color:var(--text-secondary);margin-top:2px}
+.message-card-body .entry-meta{font-size:11px;color:var(--text-light);margin-top:4px;display:flex;gap:8px}
+.typing-indicator{display:flex;gap:4px;padding:4px 0}
+.typing-indicator span{width:8px;height:8px;border-radius:50%;background:var(--text-light);animation:bounce 1.4s infinite ease-in-out both}
+.typing-indicator span:nth-child(1){animation-delay:-.32s}
+.typing-indicator span:nth-child(2){animation-delay:-.16s}
+@keyframes bounce{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}
+.chat-input-area{background:#fff;border-top:1px solid var(--border);padding:12px 20px;display:flex;gap:10px;align-items:flex-end;border-radius:0 0 var(--radius-lg) var(--radius-lg)}
+.input-wrapper{flex:1;display:flex;gap:8px;align-items:flex-end;background:#f1f3f4;border-radius:12px;padding:8px 12px;border:1px solid transparent;transition:var(--transition)}
+.input-wrapper:focus-within{border-color:var(--primary);background:#fff}
+#chatInput{flex:1;border:none;background:transparent;resize:none;max-height:120px;min-height:24px;line-height:1.5;font-size:14px;overflow-y:auto}
+#chatInput:focus{outline:none}
+.input-actions{display:flex;gap:6px}
+.icon-btn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);transition:var(--transition);flex-shrink:0}
+.icon-btn:hover{background:rgba(0,0,0,.06);color:var(--text)}
+.icon-btn.mic.active{color:var(--danger);background:rgba(234,67,53,.1)}
+.icon-btn:disabled{opacity:.5;cursor:not-allowed}
+.send-btn{width:36px;height:36px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;transition:var(--transition);flex-shrink:0}
+.send-btn:hover{background:var(--primary-dark)}
+.send-btn:disabled{background:#bdc1c6;cursor:not-allowed}
+.new-chat-btn{padding:8px 14px;border-radius:20px;border:1px solid var(--border);background:#fff;font-size:13px;color:var(--text-secondary);white-space:nowrap;transition:var(--transition);flex-shrink:0}
+.new-chat-btn:hover{border-color:var(--primary);color:var(--primary)}
+
+/* ========== Tab2 知识库 ========== */
+.kb-toolbar{background:#fff;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;box-shadow:var(--shadow)}
+.kb-search{display:flex;gap:10px;margin-bottom:12px}
+.kb-search input{flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px}
+.kb-search input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(26,115,232,.1)}
+.kb-filters{display:flex;flex-wrap:wrap;gap:8px}
+.kb-filters select{padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:#fff;min-width:120px}
+.kb-filters select:focus{border-color:var(--primary)}
+.kb-list{display:flex;flex-direction:column;gap:10px}
+.kb-entry{background:#fff;border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);cursor:pointer;transition:var(--transition);border:1px solid transparent}
+.kb-entry:hover{box-shadow:var(--shadow-hover);border-color:#e8f0fe}
+.kb-entry-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.kb-entry-title{font-size:15px;font-weight:600;flex:1}
+.kb-entry-tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{display:inline-flex;align-items:center;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:500}
+.tag-type{background:#e8f0fe;color:#1967d2}
+.tag-status-pending_review{background:#fef7e0;color:#b06000}
+.tag-status-approved{background:#e6f4ea;color:#137333}
+.tag-status-draft{background:#f1f3f4;color:#5f6368}
+.tag-status-rejected{background:#fce8e6;color:#c5221f}
+.tag-status-archived{background:#e8eaed;color:#5f6368}
+.kb-entry-summary{font-size:13px;color:var(--text-secondary);line-height:1.5;margin-bottom:8px}
+.kb-entry-meta{display:flex;gap:16px;font-size:12px;color:var(--text-light);flex-wrap:wrap}
+.kb-entry-meta span{display:flex;align-items:center;gap:4px}
+.kb-detail{background:#fff;border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow);margin-top:12px}
+.kb-detail h3{font-size:16px;margin-bottom:12px}
+.kb-detail-content{line-height:1.8;font-size:14px}
+.kb-detail-content h4{margin:16px 0 8px;font-size:14px;color:var(--text-secondary)}
+.kb-detail-content p{margin-bottom:8px}
+.kb-detail-tags,.kb-detail-versions{margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
+.kb-detail-tags .tag{margin-right:6px;margin-bottom:6px}
+.kb-detail-versions .version-item{padding:8px 12px;background:#f8f9fa;border-radius:6px;margin-bottom:6px;font-size:13px}
+.kb-empty{text-align:center;padding:60px 20px;color:var(--text-secondary)}
+.kb-empty-icon{font-size:48px;margin-bottom:12px;opacity:.5}
+.pagination{display:flex;gap:8px;justify-content:center;align-items:center;margin-top:20px}
+.pagination button{padding:6px 12px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;font-size:13px;cursor:pointer}
+.pagination button:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+.pagination button.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.pagination button:disabled{opacity:.5;cursor:not-allowed}
+.pagination span{font-size:13px;color:var(--text-secondary)}
+
+/* ========== Tab3 审核 ========== */
+.review-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.review-stats{display:flex;gap:12px}
+.stat-card{background:#fff;border-radius:var(--radius);padding:12px 20px;box-shadow:var(--shadow);text-align:center}
+.stat-card-value{font-size:24px;font-weight:600;color:var(--primary)}
+.stat-card-label{font-size:12px;color:var(--text-secondary);margin-top:2px}
+.review-list{display:flex;flex-direction:column;gap:10px}
+.review-item{background:#fff;border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);cursor:pointer;transition:var(--transition)}
+.review-item:hover{box-shadow:var(--shadow-hover)}
+.review-item-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.review-item-title{font-size:15px;font-weight:600;flex:1}
+.review-score{font-weight:600;color:var(--primary)}
+.review-panel{background:#fff;border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow);margin-top:12px}
+.review-section{margin-bottom:16px}
+.review-section h4{font-size:14px;margin-bottom:8px;color:var(--text-secondary)}
+.score-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.score-field{display:flex;flex-direction:column;gap:4px}
+.score-field label{font-size:12px;color:var(--text-secondary)}
+.score-field select{padding:8px;border:1px solid var(--border);border-radius:var(--radius)}
+.review-actions{display:flex;gap:10px;margin-top:16px}
+
+/* ========== Tab4 设置 ========== */
+.settings-section{background:#fff;border-radius:var(--radius-lg);padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.settings-section h3{font-size:15px;margin-bottom:16px}
+.user-profile{display:flex;align-items:center;gap:16px}
+.user-profile .user-avatar{width:64px;height:64px;font-size:24px}
+.user-profile-info h4{font-size:16px;margin-bottom:4px}
+.user-profile-info p{font-size:13px;color:var(--text-secondary);margin-bottom:2px}
+.password-form{max-width:400px}
+.password-form .form-group{margin-bottom:16px}
+.about-info{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.about-info-item{padding:12px;background:#f8f9fa;border-radius:var(--radius)}
+.about-info-item-label{font-size:12px;color:var(--text-secondary)}
+.about-info-item-value{font-size:14px;font-weight:500;margin-top:2px}
+
+/* ========== Toast ========== */
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:12px 20px;border-radius:var(--radius);color:#fff;font-size:14px;z-index:9999;opacity:0;transition:opacity .3s ease;pointer-events:none}
+.toast.show{opacity:1}
+.toast.success{background:var(--success)}
+.toast.error{background:var(--danger)}
+.toast.info{background:var(--primary)}
+
+/* ========== Tab5 管理 ========== */
+.admin-tabs{display:flex;gap:4px;margin-bottom:16px;background:#fff;border-radius:var(--radius-lg);padding:4px;box-shadow:var(--shadow);width:fit-content}
+.admin-tab{padding:8px 16px;border-radius:var(--radius);font-size:13px;color:var(--text-secondary);cursor:pointer;transition:var(--transition)}
+.admin-tab.active{background:var(--primary);color:#fff}
+.admin-section{display:none}
+.admin-section.active{display:block}
+.user-list{display:flex;flex-direction:column;gap:8px}
+.user-row{display:flex;align-items:center;justify-content:space-between;background:#fff;padding:12px 16px;border-radius:var(--radius);box-shadow:var(--shadow)}
+.user-row-info{display:flex;align-items:center;gap:10px}
+.user-row-name{font-weight:500;font-size:14px}
+.user-row-meta{font-size:12px;color:var(--text-secondary)}
+.role-badge{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500}
+.role-badge.admin{background:#e8f0fe;color:#1967d2}
+.role-badge.reviewer{background:#fef7e0;color:#b06000}
+.role-badge.contributor{background:#e6f4ea;color:#137333}
+.create-user-form{background:#fff;border-radius:var(--radius-lg);padding:16px;margin-bottom:16px;box-shadow:var(--shadow);display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;align-items:end}
+
+/* ========== 响应式 ========== */
+@media (max-width:768px){
+.login-card{padding:28px 20px;margin:10px}
+.app-header{flex-wrap:wrap;height:auto;padding:8px 12px;gap:8px}
+.app-nav{order:3;width:100%;overflow-x:auto;padding:4px 0}
+.nav-tab{padding:6px 12px;font-size:13px}
+.user-details{display:none}
+.tab-panel{padding:12px}
+.chat-container{height:calc(100vh - 120px)}
+.message{max-width:90%}
+.kb-filters{flex-direction:column}
+.kb-filters select{width:100%}
+.kb-search{flex-direction:column}
+.kb-search .btn{width:100%}
+.score-form{grid-template-columns:1fr 1fr}
+.review-actions{flex-direction:column}
+.review-actions .btn{width:100%}
+.about-info{grid-template-columns:1fr 1fr}
+.create-user-form{grid-template-columns:1fr}
+.input-actions{gap:4px}
+.icon-btn,.send-btn{width:34px;height:34px}
+}
+@media (max-width:480px){
+.score-form{grid-template-columns:1fr}
+.about-info{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ========== 登录页 ========== -->
+<div class="login-page" id="loginPage">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">📚</div>
+      <h1>智能知识库</h1>
+      <p>企业知识管理系统</p>
+    </div>
+    <div class="form-group">
+      <label>用户名</label>
+      <input type="text" id="loginUsername" autocomplete="username" placeholder="请输入用户名">
+    </div>
+    <div class="form-group">
+      <label>密码</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" placeholder="请输入密码" onkeydown="if(event.key==='Enter')handleLogin()">
+    </div>
+    <button class="btn btn-primary" onclick="handleLogin()" id="loginBtn">登录</button>
+    <div class="error-msg" id="loginError"></div>
+  </div>
+</div>
+
+<!-- ========== 主应用 ========== -->
+<div class="app" id="app">
+  <header class="app-header">
+    <div class="app-title">
+      <div class="app-title-icon">📚</div>
+      <span>智能知识库</span>
+    </div>
+    <nav class="app-nav" id="appNav">
+      <button class="nav-tab active" data-tab="chat">💬 对话</button>
+      <button class="nav-tab" data-tab="kb">📖 知识库</button>
+      <button class="nav-tab hidden" data-tab="review">✅ 审核</button>
+      <button class="nav-tab hidden" data-tab="admin">⚙️ 管理</button>
+      <button class="nav-tab" data-tab="settings">🔧 设置</button>
+    </nav>
+    <div class="app-user">
+      <div class="user-info">
+        <div class="user-avatar" id="userAvatar">U</div>
+        <div class="user-details">
+          <span class="user-name" id="userName">--</span>
+          <span class="user-role" id="userRole">--</span>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="handleLogout()">退出</button>
+    </div>
+  </header>
+
+  <main class="app-content">
+    <!-- Tab1: 对话 -->
+    <div class="tab-panel active" id="panel-chat">
+      <div class="chat-container">
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-welcome" id="chatWelcome">
+            <div class="chat-welcome-icon">🤖</div>
+            <h2>您好，我是知识库助手</h2>
+            <p>我可以帮您录入知识、查询条目、审核内容<br>请描述您的问题或需求</p>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <div class="input-wrapper">
+            <textarea id="chatInput" placeholder="输入消息... (Enter 发送 / Shift+Enter 换行)" rows="1"></textarea>
+            <div class="input-actions">
+              <button class="icon-btn mic" id="micBtn" title="语音输入" onclick="toggleVoiceInput()">🎤</button>
+            </div>
+          </div>
+          <button class="icon-btn" title="新建对话" onclick="newChat()">✨</button>
+          <button class="send-btn" id="sendBtn" onclick="sendChat()">➤</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab2: 知识库 -->
+    <div class="tab-panel" id="panel-kb">
+      <div class="kb-toolbar">
+        <div class="kb-search">
+          <input type="text" id="kbSearchInput" placeholder="搜索知识库..." onkeydown="if(event.key==='Enter')searchKb()">
+          <button class="btn btn-primary" onclick="searchKb()">搜索</button>
+        </div>
+        <div class="kb-filters">
+          <select id="kbFilterType" onchange="searchKb()">
+            <option value="">所有类型</option>
+            <option value="fault_case">故障案例</option>
+            <option value="sop">标准作业流程</option>
+            <option value="experience_rule">经验规则</option>
+            <option value="scene_portrait">场景画像</option>
+            <option value="tool_script">工具脚本</option>
+            <option value="ai_template">AI 模板</option>
+          </select>
+          <select id="kbFilterStatus" onchange="searchKb()">
+            <option value="">所有状态</option>
+            <option value="draft">草稿</option>
+            <option value="pending_review">待审核</option>
+            <option value="approved">已通过</option>
+            <option value="rejected">已驳回</option>
+            <option value="archived">已归档</option>
+          </select>
+          <select id="kbFilterLayer" onchange="searchKb()">
+            <option value="">所有架构层</option>
+            <option value="L1">L1-设备层</option>
+            <option value="L2">L2-系统层</option>
+            <option value="L3">L3-应用层</option>
+            <option value="L4">L4-业务层</option>
+            <option value="L5">L5-决策层</option>
+          </select>
+          <select id="kbSort" onchange="searchKb()">
+            <option value="created_at_desc">最新创建</option>
+            <option value="created_at_asc">最早创建</option>
+            <option value="score_total_desc">评分最高</option>
+            <option value="updated_at_desc">最近更新</option>
+          </select>
+        </div>
+      </div>
+      <div class="kb-list" id="kbList"></div>
+      <div class="pagination" id="kbPagination"></div>
+    </div>
+
+    <!-- Tab3: 审核 -->
+    <div class="tab-panel" id="panel-review">
+      <div class="review-header">
+        <div>
+          <h2 style="font-size:18px;margin-bottom:4px">待审核列表</h2>
+          <p style="font-size:13px;color:var(--text-secondary)">审核待处理的知识条目</p>
+        </div>
+        <div class="review-stats">
+          <div class="stat-card">
+            <div class="stat-card-value" id="reviewPendingCount">0</div>
+            <div class="stat-card-label">待审核</div>
+          </div>
+        </div>
+      </div>
+      <div class="review-list" id="reviewList"></div>
+    </div>
+
+    <!-- Tab4: 管理 -->
+    <div class="tab-panel" id="panel-admin">
+      <div class="admin-tabs" id="adminTabs">
+        <div class="admin-tab active" data-section="admin-users">用户管理</div>
+        <div class="admin-tab" data-section="admin-entries">条目管理</div>
+      </div>
+      <div class="admin-section active" id="admin-users">
+        <div class="settings-section">
+          <h3>创建新用户</h3>
+          <div class="create-user-form">
+            <div class="form-group" style="margin-bottom:0">
+              <label>用户名</label>
+              <input type="text" id="newUsername" placeholder="唯一用户名">
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label>显示名</label>
+              <input type="text" id="newUserDisplay" placeholder="姓名">
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label>密码</label>
+              <input type="password" id="newUserPassword" placeholder="至少6位">
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label>角色</label>
+              <select id="newUserRole">
+                <option value="contributor">贡献者</option>
+                <option value="reviewer">审核员</option>
+                <option value="admin">管理员</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="createUser()" style="height:42px">创建</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3>用户列表</h3>
+          <div class="user-list" id="userList"></div>
+        </div>
+      </div>
+      <div class="admin-section" id="admin-entries">
+        <div class="settings-section">
+          <h3>条目管理</h3>
+          <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">在此管理所有知识条目的归档和删除</p>
+          <div id="adminEntryList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab5: 设置 -->
+    <div class="tab-panel" id="panel-settings">
+      <div class="settings-section">
+        <h3>个人信息</h3>
+        <div class="user-profile">
+          <div class="user-avatar" id="settingsAvatar">U</div>
+          <div class="user-profile-info">
+            <h4 id="settingsName">--</h4>
+            <p id="settingsUsername">--</p>
+            <p><span class="role-badge contributor" id="settingsRole">--</span></p>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>修改密码</h3>
+        <div class="password-form">
+          <div class="form-group">
+            <label>旧密码</label>
+            <input type="password" id="oldPassword">
+          </div>
+          <div class="form-group">
+            <label>新密码</label>
+            <input type="password" id="newPassword" placeholder="至少 6 位">
+          </div>
+          <div class="form-group">
+            <label>确认新密码</label>
+            <input type="password" id="confirmPassword">
+          </div>
+          <button class="btn btn-primary" onclick="changePassword()">修改密码</button>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>关于系统</h3>
+        <div class="about-info">
+          <div class="about-info-item">
+            <div class="about-info-item-label">版本</div>
+            <div class="about-info-item-value">v1.0.0</div>
+          </div>
+          <div class="about-info-item">
+            <div class="about-info-item-label">构建时间</div>
+            <div class="about-info-item-value">2026-07-28</div>
+          </div>
+          <div class="about-info-item">
+            <div class="about-info-item-label">API 地址</div>
+            <div class="about-info-item-value" id="apiBaseUrl">/api</div>
+          </div>
+          <div class="about-info-item">
+            <div class="about-info-item-label">登录状态</div>
+            <div class="about-info-item-value" style="color:var(--success)">已登录</div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <button class="btn btn-danger" onclick="handleLogout()">退出登录</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ 全局状态 ============ */
+const state = {
+  token: localStorage.getItem('kb_token') || '',
+  user: JSON.parse(localStorage.getItem('kb_user') || 'null'),
+  currentTab: 'chat',
+  sessionId: crypto.randomUUID ? crypto.randomUUID() : 's-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+  messages: [],
+  isGenerating: false,
+  kbPage: 1,
+  kbTotal: 0,
+  kbData: [],
+};
+
+/* ============ 工具函数 ============ */
+function $(id){return document.getElementById(id)}
+function toast(msg,type='info'){const t=$('toast');t.textContent=msg;t.className='toast show '+type;setTimeout(()=>t.classList.remove('show'),2500)}
+function api(path,options={}){const headers={'Content-Type':'application/json'};if(state.token)headers['Authorization']='Bearer '+state.token;return fetch('/api'+path,{...options,headers:options.headers||headers}).then(r=>r.json())}
+function escapeHtml(str){const div=document.createElement('div');div.textContent=str;return div.innerHTML}
+
+/* ============ 登录/登出 ============ */
+function showLogin(){ $('loginPage').style.display='flex'; $('app').classList.remove('show'); }
+function showApp(){ $('loginPage').style.display='none'; $('app').classList.add('show'); }
+function updateUserUI(){ if(!state.user)return; $('userName').textContent=state.user.displayName||state.user.username; $('userRole').textContent=roleText(state.user.role); $('userAvatar').textContent=(state.user.displayName||state.user.username).charAt(0).toUpperCase(); $('settingsName').textContent=state.user.displayName||state.user.username; $('settingsUsername').textContent='@'+state.user.username; const rb=$('settingsRole');rb.textContent=roleText(state.user.role);rb.className='role-badge '+state.user.role.toLowerCase(); const showReview=state.user.role==='reviewer'||state.user.role==='admin'; const showAdmin=state.user.role==='admin'; document.querySelector('[data-tab="review"]').classList.toggle('hidden',!showReview); document.querySelector('[data-tab="admin"]').classList.toggle('hidden',!showAdmin); }
+function roleText(r){return{admin:'管理员',reviewer:'审核员',contributor:'贡献者'}[r]||r}
+async function handleLogin(){ const username=$('loginUsername').value.trim();const password=$('loginPassword').value; const err=$('loginError');err.classList.remove('show'); if(!username||!password){err.textContent='请输入用户名和密码';err.classList.add('show');return} const btn=$('loginBtn');btn.disabled=true;btn.textContent='登录中...'; try{const resp=await api('/auth/login',{method:'POST',body:JSON.stringify({username,password})}); if(resp.success){state.token=resp.data.token;state.user=resp.data.user;localStorage.setItem('kb_token',state.token);localStorage.setItem('kb_user',JSON.stringify(state.user));updateUserUI();showApp();switchTab('chat');toast('登录成功','success')}else{err.textContent=resp.error||'登录失败';err.classList.add('show')}}catch(e){err.textContent='网络错误，请重试';err.classList.add('show')}finally{btn.disabled=false;btn.textContent='登录'}}
+function handleLogout(){localStorage.removeItem('kb_token');localStorage.removeItem('kb_user');state.token='';state.user=null;state.messages=[];showLogin();$('loginUsername').value='';$('loginPassword').value='';toast('已退出登录','info')}
+
+/* ============ Tab 切换 ============ */
+function switchTab(tab){ state.currentTab=tab; document.querySelectorAll('.nav-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab)); document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+tab)); if(tab==='kb'&&state.kbData.length===0)searchKb(); if(tab==='review')loadReviewList(); if(tab==='admin')loadAdminData(); }
+document.querySelectorAll('.nav-tab').forEach(t=>t.addEventListener('click',()=>{if(!t.classList.contains('hidden'))switchTab(t.dataset.tab)}));
+
+/* ============ Tab1: 对话 ============ */
+function newChat(){state.sessionId=crypto.randomUUID?crypto.randomUUID():'s-'+Date.now()+'-'+Math.random().toString(36).slice(2);state.messages=[];renderChat();toast('已新建对话','info')}
+async function sendChat(){ const input=$('chatInput');const msg=input.value.trim(); if(!msg||state.isGenerating)return; state.isGenerating=true; input.value=''; input.style.height='auto'; const userMsg={role:'user',content:msg,time:Date.now()};state.messages.push(userMsg);renderChat();try{const resp=await api('/chat',{method:'POST',body:JSON.stringify({message:msg,sessionId:state.sessionId})}); if(resp.success){state.messages.push({role:'ai',content:resp.data,time:Date.now(),type:resp.data.type});}else{state.messages.push({role:'ai',content:{type:'error',message:resp.error||'请求失败'},time:Date.now()});} }catch(e){state.messages.push({role:'ai',content:{type:'error',message:'网络错误'},time:Date.now()});} finally{state.isGenerating=false;renderChat();} }
+function renderChat(){const box=$('chatMessages');if(state.messages.length===0){box.innerHTML='<div class="chat-welcome"><div class="chat-welcome-icon">🤖</div><h2>您好，我是知识库助手</h2><p>我可以帮您录入知识、查询条目、审核内容<br>请描述您的问题或需求</p></div>';return}box.innerHTML='';state.messages.forEach(m=>box.appendChild(renderMessage(m)));box.scrollTop=box.scrollHeight}
+function renderMessage(m){const wrap=document.createElement('div');wrap.className='message '+m.role;const avatar=document.createElement('div');avatar.className='message-avatar';avatar.textContent=m.role==='user'?(state.user.displayName||state.user.username).charAt(0).toUpperCase():'AI';const content=document.createElement('div');content.className='message-content';if(m.role==='user'){const b=document.createElement('div');b.className='message-bubble';b.textContent=m.content;content.appendChild(b)}else{if(typeof m.content==='string'){const b=document.createElement('div');b.className='message-bubble';b.textContent=m.content;content.appendChild(b)}else{content.appendChild(renderAiCard(m.content))}}const time=document.createElement('div');time.className='message-time';time.textContent=new Date(m.time).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});content.appendChild(time);wrap.appendChild(avatar);wrap.appendChild(content);return wrap}
+function renderAiCard(d){const card=document.createElement('div');const typeMap={entry_created:'success',entry_updated:'success',entry_deleted:'success',error:'error',query_result:'info',follow_up:''};const labelMap={entry_created:'✅ 条目创建成功',entry_updated:'✅ 条目更新成功',entry_deleted:'🗑️ 条目已删除',error:'❌ 操作失败',query_result:'🔍 查询结果',follow_up:'💬 追问'};const style=typeMap[d.type]||'';card.className='message-card '+style;if(d.type==='follow_up'){card.style.borderLeft='none';card.style.background='transparent';const b=document.createElement('div');b.className='message-bubble';b.style.background='#fff';b.style.border='1px solid var(--border)';b.textContent=d.message||'请补充信息';return b}const title=document.createElement('div');title.className='message-card-title';title.textContent=labelMap[d.type]||d.type;const body=document.createElement('div');body.className='message-card-body';if(d.type==='entry_created'||d.type==='entry_updated'){if(d.entry){const e=d.entry;body.innerHTML+='<div style="margin-top:4px"><strong>'+escapeHtml(e.entryCode||'')+'</strong> · '+escapeHtml(e.title||'')+'</div>'}}if(d.type==='query_result'&&d.results){body.innerHTML+='<div style="margin-top:8px">共找到 '+d.results.length+' 条结果</div>';d.results.forEach(r=>{const item=document.createElement('div');item.className='entry-item';item.innerHTML='<div class="entry-item-title">'+escapeHtml(r.title||'')+'</div><div class="entry-item-summary">'+escapeHtml(r.summary||'')+'</div><div class="entry-meta"><span>'+escapeHtml(r.knowledge_type||'')+'</span><span>'+escapeHtml(r.status||'')+'</span></div>';body.appendChild(item)})}if(d.type==='error'){body.textContent=d.message||'未知错误'}card.appendChild(title);card.appendChild(body);return card}
+
+/* chat input 自动扩展 */
+$('chatInput').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'});$('chatInput').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
+
+/* ============ 语音输入 ============ */
+var recognition=null;var isRecording=false;
+function toggleVoiceInput(){
+  var btn=$('micBtn');
+  if(!recognition){
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){toast('浏览器不支持语音输入','error');return;}
+    recognition=new SR();
+    recognition.lang='zh-CN';
+    recognition.continuous=false;
+    recognition.interimResults=false;
+    recognition.onresult=function(e){
+      var text=e.results[0][0].transcript;
+      var input=$('chatInput');
+      input.value=(input.value?'':'')+text;
+      input.dispatchEvent(new Event('input'));
+    };
+    recognition.onerror=function(){toast('语音识别出错','error');stopVoiceInput();};
+    recognition.onend=function(){stopVoiceInput();};
+  }
+  if(isRecording){recognition.stop();}
+  else{recognition.start();isRecording=true;btn.classList.add('active');toast('正在聆听...','info');}
+}
+function stopVoiceInput(){
+  isRecording=false;
+  $('micBtn').classList.remove('active');
+  if(recognition){recognition=null;}
+}
+
+/* ============ Tab2: 知识库 ============ */
+function searchKb(){state.kbPage=1;loadKbData()}
+async function loadKbData(){ const params=new URLSearchParams(); const q=$('kbSearchInput').value.trim();if(q)params.set('q',q); const t=$('kbFilterType').value;if(t)params.set('knowledge_type',t); const s=$('kbFilterStatus').value;if(s)params.set('status',s); const l=$('kbFilterLayer').value;if(l)params.set('architecture_layer',l); const sortMap={created_at_desc:'created_at DESC',created_at_asc:'created_at ASC',score_total_desc:'score_total DESC',updated_at_desc:'updated_at DESC'};params.set('sort',sortMap[$('kbSort').value]); params.set('page',state.kbPage);params.set('limit',10); try{const resp=await api('/entries?'+params.toString());if(resp.success){state.kbData=resp.data.entries;state.kbTotal=resp.data.total;renderKbList();renderPagination()}else{toast('加载失败','error')}}catch(e){toast('网络错误','error')}}
+function renderKbList(){const list=$('kbList');if(!state.kbData.length){list.innerHTML='<div class="kb-empty"><div class="kb-empty-icon">📭</div><p>暂无数据</p></div>';return}list.innerHTML='';state.kbData.forEach(e=>{const item=document.createElement('div');item.className='kb-entry';item.innerHTML='<div class="kb-entry-header"><div class="kb-entry-title">'+escapeHtml(e.title)+'</div><div class="kb-entry-tags"><span class="tag tag-type">'+escapeHtml(e.knowledge_type||'')+'</span><span class="tag tag-status-'+(e.status||'draft')+'">'+escapeHtml(statusText(e.status))+'</span></div></div><div class="kb-entry-summary">'+escapeHtml(e.summary||'暂无摘要')+'</div><div class="kb-entry-meta"><span>📊 评分: '+(e.score_total||0)+'</span><span>🏗️ '+escapeHtml(e.architecture_layer||'')+'</span><span>📅 '+formatDate(e.updated_at)+'</span><span>👤 '+escapeHtml(e.created_by||'')+'</span></div>';item.onclick=()=>showEntryDetail(e.id);list.appendChild(item)})}
+function renderPagination(){const p=$('kbPagination');const totalPages=Math.ceil(state.kbTotal/10)||1;let html='';html+='<button onclick="changeKbPage('+(state.kbPage-1)+')" '+(state.kbPage<=1?'disabled':'')+'>上一页</button>';html+='<span>'+state.kbPage+' / '+totalPages+'</span>';html+='<button onclick="changeKbPage('+(state.kbPage+1)+')" '+(state.kbPage>=totalPages?'disabled':'')+'>下一页</button>';p.innerHTML=html}
+function changeKbPage(p){state.kbPage=p;loadKbData()}
+async function showEntryDetail(id){const existing=document.querySelector('.kb-detail');if(existing)existing.remove();try{const resp=await api('/entries/'+id);if(!resp.success)return;const e=resp.data.entry;const d=$('kbList');const detail=document.createElement('div');detail.className='kb-detail';detail.innerHTML='<h3>'+escapeHtml(e.title)+'</h3><div class="kb-detail-content">'+(e.full_content||'暂无内容').replace(/\n/g,'<br>')+'</div><div class="kb-detail-tags"><strong>标签：</strong>'+(resp.data.tags?resp.data.tags.map(t=>'<span class="tag tag-type">'+escapeHtml(t)+'</span>').join(' '):'')+'</div><div class="kb-detail-versions"><strong>版本历史：</strong>'+(resp.data.versions?resp.data.versions.map(v=>'<div class="version-item">版本 '+escapeHtml(v.version_label||'')+' · '+formatDate(v.created_at))+'</div>':'暂无版本')+'</div>';d.after(detail)}catch(e){toast('加载详情失败','error')}}
+function statusText(s){return{pending_review:'待审核',approved:'已通过',draft:'草稿',rejected:'已驳回',archived:'已归档'}[s]||s}
+function formatDate(d){if(!d)return '--';return new Date(d).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}
+
+/* ============ Tab3: 审核 ============ */
+let reviewEntries=[];
+async function loadReviewList(){try{const resp=await api('/review/pending');if(resp.success){reviewEntries=resp.data.entries;$('reviewPendingCount').textContent=reviewEntries.length;renderReviewList()}else{toast('加载审核列表失败','error')}}catch(e){toast('网络错误','error')}}
+function renderReviewList(){const list=$('reviewList');if(!reviewEntries.length){list.innerHTML='<div class="kb-empty"><div class="kb-empty-icon">✅</div><p>暂无待审核条目</p></div>';return}list.innerHTML='';reviewEntries.forEach(e=>{const item=document.createElement('div');item.className='review-item';item.innerHTML='<div class="review-item-header"><div class="review-item-title">'+escapeHtml(e.title)+'</div><div class="tag tag-status-pending_review">待审核</div></div><div class="kb-entry-summary">'+escapeHtml(e.summary||'')+'</div><div class="kb-entry-meta"><span>🏗️ '+escapeHtml(e.architecture_layer||'')+'</span><span>📅 '+formatDate(e.updated_at)+'</span><span>👤 '+escapeHtml(e.created_by||'')+'</span></div>';item.onclick=()=>showReviewPanel(e);list.appendChild(item)})}
+function showReviewPanel(entry){const existing=document.querySelector('.review-panel');if(existing)existing.remove();const panel=document.createElement('div');panel.className='review-panel';const scores=scoreLabels();const opts=scoreOptions();panel.innerHTML='<div class="review-section"><h4>条目内容</h4><div class="kb-detail-content" style="padding:12px;background:#f8f9fa;border-radius:8px">'+escapeHtml(entry.full_content||'暂无内容').replace(/\n/g,'<br>')+'</div></div><div class="review-section"><h4>六维评分</h4><div class="score-form">'+Object.keys(scores).map(d=>'<div class="score-field"><label>'+scores[d]+'</label><select data-score="'+d+'"><option value="">请选择</option>'+opts.map(n=>'<option value="'+n+'">'+n+' 分</option>').join('')+'</select></div>').join('')+'</div></div><div class="review-section"><h4>审核意见</h4><textarea id="reviewComment" style="width:100%;min-height:80px;padding:10px;border:1px solid var(--border);border-radius:8px;resize:vertical" placeholder="请填写审核意见..."></textarea></div><div class="review-actions"><button class="btn btn-success" data-action="approve" data-id="'+entry.id+'">✅ 通过</button><button class="btn btn-danger" data-action="reject" data-id="'+entry.id+'">❌ 驳回</button><button class="btn btn-outline" data-action="cancel">取消</button></div>';panel.querySelectorAll('[data-action]').forEach(btn=>{btn.addEventListener('click',()=>{const act=btn.dataset.action;if(act==='cancel'){panel.remove()}else{submitReview(act,parseInt(btn.dataset.id))}})});$('reviewList').after(panel)}function scoreLabels(){return{content_completeness:'内容完整性',logic_correctness:'逻辑正确性',operation_feasibility:'操作可行性',safety_level:'安全等级',efficiency:'效率',standardization:'规范性'}}function scoreOptions(){return[1,2,3,4,5,6,7,8,9,10]}
+function scoreLabel(k){return{content_completeness:'内容完整性',logic_correctness:'逻辑正确性',operation_feasibility:'操作可行性',safety_level:'安全等级',efficiency:'效率',standardization:'规范性'}[k]||k}
+async function submitReview(action,id){const scores={};document.querySelectorAll('.review-panel select[data-score]').forEach(s=>{if(s.value)scores[s.dataset.score]=parseInt(s.value)});const comment=$('reviewComment').value.trim();if(!Object.keys(scores).length){toast('请完成六维评分','error');return}if(action==='reject'&&!comment){toast('驳回必须填写审核意见','error');return}try{const resp=await api('/review/'+id,{method:'POST',body:JSON.stringify({action,scores,comment})});if(resp.success){toast(action==='approve'?'审核通过':'已驳回','success');loadReviewList()}else{toast(resp.error||'操作失败','error')}}catch(e){toast('网络错误','error')}}
+
+/* ============ Tab4: 设置 ============ */
+async function changePassword(){const oldP=$('oldPassword').value;const newP=$('newPassword').value;const confirmP=$('confirmPassword').value;if(!oldP||!newP||!confirmP){toast('请填写所有字段','error');return}if(newP.length<6){toast('新密码至少6位','error');return}if(newP!==confirmP){toast('两次密码不一致','error');return}try{const resp=await api('/auth/change-password',{method:'POST',body:JSON.stringify({oldPassword:oldP,newPassword:newP})});if(resp.success){toast('密码修改成功，请重新登录','success');setTimeout(()=>handleLogout(),1500)}else{toast(resp.error||'修改失败','error')}}catch(e){toast('网络错误','error')}}
+
+/* ============ Tab5: 管理 ============ */
+function loadAdminData(){loadUserList();loadAdminEntries()}
+document.querySelectorAll('.admin-tab').forEach(t=>t.addEventListener('click',()=>{document.querySelectorAll('.admin-tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.admin-section').forEach(x=>x.classList.remove('active'));t.classList.add('active');document.getElementById(t.dataset.section).classList.add('active')}));
+async function loadUserList(){try{const resp=await api('/admin/users');if(resp.success){renderUserList(resp.data.users)}}catch(e){toast('加载用户失败','error')}}
+function renderUserList(users){const list=$('userList');list.innerHTML='';users.forEach(u=>{const row=document.createElement('div');row.className='user-row';row.innerHTML='<div class="user-row-info"><div class="user-avatar">'+(u.display_name||u.username).charAt(0).toUpperCase()+'</div><div><div class="user-row-name">'+escapeHtml(u.display_name||u.username)+'</div><div class="user-row-meta">@'+escapeHtml(u.username)+' · <span class="role-badge '+u.role+'">'+roleText(u.role)+'</span></div></div></div><div style="font-size:12px;color:var(--text-light)">'+(u.is_active?'✅ 活跃':'⛔ 已停用')+'</div>';list.appendChild(row)})}
+async function createUser(){const username=$('newUsername').value.trim();const displayName=$('newUserDisplay').value.trim();const password=$('newUserPassword').value;const role=$('newUserRole').value;if(!username||!password){toast('请填写必填字段','error');return}try{const resp=await api('/admin/users',{method:'POST',body:JSON.stringify({username,displayName,password,role})});if(resp.success){toast('用户创建成功','success');$('newUsername').value='';$('newUserDisplay').value='';$('newUserPassword').value='';loadUserList()}else{toast(resp.error||'创建失败','error')}}catch(e){toast('网络错误','error')}}
+async function loadAdminEntries(){try{const resp=await api('/entries?limit=50');if(resp.success){renderAdminEntries(resp.data.entries)}}catch(e){toast('加载条目失败','error')}}
+function renderAdminEntries(entries){const list=$('adminEntryList');if(!entries.length){list.innerHTML='<div class="kb-empty"><p>暂无条目</p></div>';return}list.innerHTML='';entries.forEach(e=>{const item=document.createElement('div');item.className='kb-entry';item.style.display='flex';item.style.justifyContent='space-between';item.style.alignItems='center';item.innerHTML='<div style="flex:1"><div class="kb-entry-title" style="font-size:14px">'+escapeHtml(e.title)+'</div><div class="kb-entry-meta"><span class="tag tag-status-'+(e.status||'draft')+'">'+escapeHtml(statusText(e.status))+'</span><span style="margin-left:8px">📊 '+(e.score_total||0)+'</span></div></div><div style="display:flex;gap:8px">'+(e.status!=='archived'?'<button class="btn btn-outline btn-sm" onclick="archiveEntry('+e.id+')">归档</button>':'')+'<button class="btn btn-danger btn-sm" onclick="deleteEntry('+e.id+')">删除</button></div>';list.appendChild(item)})}
+async function archiveEntry(id){try{const resp=await api('/admin/entries/'+id+'/archive',{method:'POST'});if(resp.success){toast('已归档','success');loadAdminEntries()}else{toast(resp.error||'操作失败','error')}}catch(e){toast('网络错误','error')}}
+async function deleteEntry(id){if(!confirm('确定要删除该条目吗？此操作不可撤销！'))return;try{const resp=await api('/admin/entries/'+id,{method:'DELETE'});if(resp.success){toast('已删除','success');loadAdminEntries()}else{toast(resp.error||'删除失败','error')}}catch(e){toast('网络错误','error')}}
+
+/* ============ 初始化 ============ */
+function init(){ if(state.token&&state.user){updateUserUI();showApp();switchTab('chat')}else{showLogin()} }
+init();
+</script>
+</body>
+</html>
