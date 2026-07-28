@@ -52,9 +52,8 @@ router.get('/pending', requireRole('reviewer', 'admin'), async (req, res) => {
 
     // 分页查询（limit/offset 已校验为整数，直接拼入 SQL）
     const [rows] = await pool.execute(
-      `SELECT id, entry_code, title, knowledge_type, scene, summary, created_by, updated_at
-       FROM kb_entries
-       ${whereClause}
+      `SELECT id, entry_code, title, knowledge_type, scene, summary, full_content, architecture_layer, created_by, updated_at
+       FROM kb_entries ${whereClause}
        ORDER BY updated_at DESC
        LIMIT ${limitNum} OFFSET ${offset}`,
       params
@@ -67,6 +66,8 @@ router.get('/pending', requireRole('reviewer', 'admin'), async (req, res) => {
       knowledgeType: row.knowledge_type,
       scene: row.scene,
       summary: row.summary,
+      fullContent: row.full_content,
+      architectureLayer: row.architecture_layer,
       createdBy: row.created_by,
       updatedAt: row.updated_at,
     }));

@@ -80,7 +80,7 @@
 - `entry_code`：在 INSERT 的字段列表和 VALUES 中都写占位符 `__ENTRY_CODE__`，后端会替换为 `KB-YYYYMMDD-NNN` 格式的实际编码
 - `version_label`：由 MySQL 计算列自动生成（主版本.次版本.修订版本），不要填写
 - `score_*`（六维评分）：入库时默认 0，审核时由审核员填写，不要填写
-- `status`：入库时默认 `draft`，不要填写
+- `status`：入库时默认 `pending_review`，后端会自动设置，不要填写
 - `created_at` / `updated_at`：自动时间戳，不要填写
 
 你需要填写的字段：

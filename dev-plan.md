@@ -19,8 +19,9 @@
 | P5 | 查询与审核 | 4 | 11 个 API 接口全部可用且权限边界正确 | P4 |
 | P6 | 前端单页 | 7 | 浏览器四 Tab 全功能可用，移动端适配 | P5 |
 | P7 | 部署上线 | 3 | 内网通过 Nginx 访问，PM2 守护运行 | P6 |
+| P8 | 优化改进 | 10 | 真实 Bug 清零 + 体验短板补齐 | P7 |
 
-**总任务数**：35 个。每个任务均可独立验收、独立提交。
+**总任务数**：45 个。每个任务均可独立验收、独立提交。
 
 ---
 
@@ -971,6 +972,44 @@ module.exports = {
 
 ---
 
+## 九续 · P8 · 体验优化与质量改进
+
+> 本阶段覆盖 P0-P7 交付后发现的真实 Bug 和体验短板。所有任务基于代码审查和用户反馈确定，优先级按"影响日常使用程度"划分。
+
+| 优先级 | 任务ID | 任务名 | 状态 | 改了什么 |
+|--------|--------|--------|------|---------|
+| 🔴 P0 | P8-T1 | 知识库列表字段名驼峰不匹配 | ✅ | `renderKbList` 改用 `e.updatedAt`/`e.architectureLayer` 等驼峰字段 |
+| 🔴 P0 | P8-T2 | 条目详情标签渲染 [object Object] | ✅ | `escapeHtml(t)`→`escapeHtml(t.name)`，修复版本历史字段名 |
+| 🔴 P0 | P8-T3 | 审核评分字段名不匹配（审核提交必失败） | ✅ | 前端 `content_completeness`→`completeness`，评分范围 1-10→1-5 |
+| 🔴 P0 | P8-T4 | 审核列表缺少 full_content | ✅ | SQL 查询增加 `full_content`、`architecture_layer` 字段 |
+| 🟠 P1 | P8-T5 | 普通用户看不到提交进度 | ✅ | entries 接口增加 `created_by` 筛选，前端 KB Tab 加"我的提交"按钮 |
+| 🟠 P1 | P8-T6 | 条目详情缺少编辑入口 | ✅ | 详情面板标题栏加"编辑"按钮，弹出预填表单后经对话更新 |
+| 🟠 P1 | P8-T7 | 聊天无打字指示器 | ✅ | `renderChat` 在 `isGenerating` 时显示跳动圆点动画 |
+| 🟠 P1 | P8-T8 | AI 录入条目始终 draft 不进审核 | ✅ | `handleInsertSuccess` 自动 `UPDATE status='pending_review'` |
+| 🟠 P1 | P8-T9 | AI 思考内容未正确保存到回复 | ✅ | 修复死代码 `replyText=replyText`，前置思考内容到回复正文 |
+| 🟠 P1 | P8-T10 | 删除条目是物理删除不可恢复 | ✅ | `DELETE FROM` → `SET status='archived'` 软删除 |
+| 🟠 P1 | P8-T11 | AI prompt 仍写 status 默认 draft | ✅ | `system-base.txt` 更新为 `pending_review` |
+| 🟠 P1 | P8-T12 | 统计接口未被前端调用 | ✅ | 新增"📊 统计"Tab，管理员可看总数/按类型分布/TOP 场景 |
+| 🟡 P2 | P8-T13 | 架构层筛选值不匹配 | ✅ | entries 接口增加 `architecture_layer` 参数识别 |
+| 🟡 P2 | P8-T14 | SQL 提取受思考内容干扰 | ✅ | `extractSqlStatements` 移到前置思考之前执行 |
+
+### 剩余待完成优化项
+
+| 优先级 | 任务ID | 任务名 | 预估工作量 | 说明 |
+|--------|--------|--------|-----------|------|
+| 🟡 P2 | P8-T15 | 搜索关键词高亮 | ✅ | `highlight()` 函数 + `mark.highlight` CSS + `renderKbList` 调用 |
+| 🟡 P2 | P8-T16 | 相关条目推荐（SQL 版） | ✅ | `GET /api/entries/:id/related` 接口 + 详情底部展示 |
+| 🟡 P2 | P8-T17 | 条目详情 Markdown 渲染 | ✅ | marked.js CDN + `renderMarkdown()` 函数 + 详情/审核面板 |
+| 🟡 P2 | P8-T18 | 搜索加时间范围筛选 | ✅ | `created_after`/`created_before` 参数 + 前端日期输入 |
+| 🟡 P2 | P8-T19 | 我的提交 Tab 独立显示 | 小（前端） | 不再复用 KB Tab 筛选，改为独立 Tab 视图 |
+| 🟡 P2 | P8-T20 | 已审核条目评分雷达图 | 中（前端 Chart） | 用 Canvas 或 SVG 画六维评分图 |
+| 🟡 P2 | P8-T21 | JWT 临近过期提醒 | ✅ | `checkTokenExpiry()` 解码 exp + 30/10 分钟 toast 警告 |
+| 🟢 P3 | P8-T22 | 操作日志页面 | 中（后端+前端） | 调用 `kb_audit_log` 表展示操作记录 |
+| 🟢 P3 | P8-T23 | 会话持久化（文件/Redis） | 中（后端） | 当前 Map 存内存，重启丢失 |
+| 🟢 P3 | P8-T24 | 禁用的用户 token 立即失效 | 中（后端） | JWT 黑名单或每次请求查 `is_active` |
+
+---
+
 ## 十、横向注意事项（贯穿全程）
 
 ### 10.1 安全红线
@@ -1076,6 +1115,30 @@ module.exports = {
 | P7-T1 | Nginx 配置 | ✅ | 2026-07-28 | nginx.conf + kb-server.conf 创建；Nginx freenginx/1.31.3 安装配置 |
 | P7-T2 | PM2 守护 | ✅ | 2026-07-28 | PM2 7.0.3 安装；ecosystem.config.js 创建；PM2 启动/保存成功 |
 | P7-T3 | 内网联调上线 | 🚧 | 2026-07-28 | Nginx 代理验证通过（登录/健康检查）；端到端联调待真实员工账号测试 |
+| P8-T1 | KB 列表驼峰字段 | ✅ | 2026-07-28 | `renderKbList` snake_case→camelCase |
+| P8-T2 | 标签渲染 [object Object] | ✅ | 2026-07-28 | `escapeHtml(t)`→`escapeHtml(t.name)` |
+| P8-T3 | 审核评分字段名 | ✅ | 2026-07-28 | `content_completeness`→`completeness`，1-10→1-5 |
+| P8-T4 | 审核列表缺 full_content | ✅ | 2026-07-28 | SQL 增加 `full_content`、`architecture_layer` |
+| P8-T5 | 普通用户审核进度 | ✅ | 2026-07-28 | `created_by` 筛选 + 前端"我的提交"按钮 |
+| P8-T6 | 条目详情编辑入口 | ✅ | 2026-07-28 | 编辑按钮 + 预填模态框 |
+| P8-T7 | 聊天打字指示器 | ✅ | 2026-07-28 | `renderChat` 加 typing-indicator |
+| P8-T8 | 录入不进审核 | ✅ | 2026-07-28 | `handleInsertSuccess` 自动设 `pending_review` |
+| P8-T9 | 思考内容未保存 | ✅ | 2026-07-28 | 修复死代码，前置思考到回复 |
+| P8-T10 | 物理删除不可恢复 | ✅ | 2026-07-28 | `DELETE FROM`→`SET status='archived'` |
+| P8-T11 | prompt 写 draft | ✅ | 2026-07-28 | `system-base.txt` 更新为 `pending_review` |
+| P8-T12 | 统计接口未调用 | ✅ | 2026-07-28 | 新增"📊 统计"Tab |
+| P8-T13 | 架构层筛选失效 | ✅ | 2026-07-28 | entries 接口增加 `architecture_layer` |
+| P8-T14 | SQL 提取受思考干扰 | ✅ | 2026-07-28 | `extractSqlStatements` 提前执行 |
+| P8-T15 | 搜索关键词高亮 | ✅ | 2026-07-28 | `highlight()` + `mark` CSS |
+| P8-T16 | 相关条目推荐 | ✅ | 2026-07-28 | `GET /api/entries/:id/related` + 前端展示 |
+| P8-T17 | Markdown 渲染 | ✅ | 2026-07-28 | marked.js + `renderMarkdown()` |
+| P8-T18 | 时间范围筛选 | ✅ | 2026-07-28 | `created_after`/`created_before` + 日期输入 |
+| P8-T19 | 我的提交独立 Tab | 🚧 | - | - |
+| P8-T20 | 评分雷达图 | 🚧 | - | - |
+| P8-T21 | JWT 过期提醒 | ✅ | 2026-07-28 | `checkTokenExpiry()` + `startTokenCheck()` |
+| P8-T22 | 操作日志页面 | 🚧 | - | - |
+| P8-T23 | 会话持久化 | 🚧 | - | - |
+| P8-T24 | 禁用用户 token 失效 | 🚧 | - | - |
 
 ---
 
@@ -1084,6 +1147,7 @@ module.exports = {
 | 版本 | 日期 | 变更内容 | 作者 |
 |------|------|---------|------|
 | v1.0 | 2026-07-28 | 初版发布，覆盖 P0-P7 共 35 个任务 | - |
+| v1.1 | 2026-07-28 | 新增 P8 优化改进阶段（14 项完成 + 10 项待做），基于代码审查发现的真实 Bug | - |
 
 ---
 
@@ -1677,6 +1741,44 @@ module.exports = {
 2. **version_history 快照**：对 UPDATE，在调用 `validateAndExecute` 之前先用 `pool.execute` SELECT 旧数据，UPDATE 成功后写 version_history。解析 WHERE `id=N` 或 `entry_code='...'` 提取条件。
 3. **audit_log 写入**：在 `validateAndExecute` 成功后单独写入，不放入 sql-executor 事务（保持 sql-executor 纯粹性，只校验和执行 AI 的 SQL）。
 4. **多 SQL 处理**：AI 可能返回 SELECT(查重) + INSERT 两条 SQL，`detectPrimaryType` 优先返回写操作类型，`parsedTypes` 数组定位具体结果索引。
+
+---
+
+### 2026-07-28 开发会话 #3 — P8 优化改进
+
+#### 审查阶段
+
+**执行操作**：
+- 逐行审查全部已实现功能，定位真实 Bug 和体验断裂点
+- 检查范围：6 个路由文件、6 个服务、前端 index.html、5 个配置文件
+
+**发现问题清单**（14 个，全部修复）：
+
+| 编号 | 问题 | 严重程度 | 文件 |
+|------|------|---------|------|
+| #1 | KB 列表日期/架构层显示 undefined | 🔴 数据显示错误 | `index.html#L666` |
+| #2 | 条目详情标签渲染 [object Object] | 🔴 渲染错误 | `index.html#L669` |
+| #3 | 审核评分字段名不匹配导致提交失败 | 🔴 功能不可用 | `index.html#L677` |
+| #4 | 审核列表缺少 full_content | 🔴 审核看不到内容 | `review.js#L55` |
+| #5 | 普通用户看不到审核进度 | 🟠 体验断裂 | `index.html` / `entries.js` |
+| #6 | 条目无编辑入口 | 🟠 体验断裂 | `index.html#L672` |
+| #7 | 聊天无打字指示器 | 🟠 无反馈 | `index.html` |
+| #8 | AI 录入不进审核（draft 状态） | 🟠 流程断裂 | `chat.js#L270` |
+| #9 | 思考内容死代码不生效 | 🟠 功能无效 | `ai.js#L117` |
+| #10 | 物理删除不可恢复 | 🟠 数据安全 | `admin.js#L53` |
+| #11 | AI prompt 仍写 draft | 🟠 文档/代码不一致 | `system-base.txt#L83` |
+| #12 | 统计接口未被前端调用 | 🟡 资源浪费 | `index.html` |
+| #13 | 架构层筛选后端不识别 | 🟡 筛选无效 | `entries.js` |
+| #14 | SQL 提取可能在思考内容中误提 | 🟡 安全隐患 | `ai.js#L126` |
+
+#### 修复执行
+
+**P8-T1 至 P8-T14** — 全部修复完成，验证通过。
+- 涉及文件：`index.html`(8 处)、`chat.js`(3 处)、`ai.js`(2 处)、`entries.js`(2 处)、`review.js`(2 处)、`admin.js`(2 处)、`system-base.txt`(1 处)
+- 单元测试：`ai.test.js` 18/18 通过
+- 集成验证：API 端点逐一调用确认
+
+**遗留**：P8-T15 至 P8-T24 共 10 项待完成，属体验提升类，不阻塞系统使用。
 
 **产物文件**：`kb-server/routes/chat.js`
 

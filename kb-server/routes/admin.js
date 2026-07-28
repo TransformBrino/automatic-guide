@@ -43,23 +43,27 @@ router.delete('/entries/:id', async (req, res) => {
 
     const entry = rows[0];
 
-    // 写 audit_log（删除日志在删除前记录，因为外键 CASCADE 会清除关联数据）
+    // 写 audit_log
     await conn.execute(
       'INSERT INTO kb_audit_log (entry_id, action, operator, detail, ip_address) VALUES (?, ?, ?, ?, ?)',
       [id, 'delete', user.username, `删除条目: ${entry.title} (${entry.entry_code})`, clientIp]
     );
 
-    // 硬删除（外键 CASCADE 会自动清除 kb_tags 和 kb_version_history）
-    await conn.execute('DELETE FROM kb_entries WHERE id = ?', [id]);
+    // 软删除：改为 archived 状态（不物理删除，保留数据和关联关系）
+    await conn.execute(
+      "UPDATE kb_entries SET status = 'archived', updated_at = NOW() WHERE id = ?",
+      [id]
+    );
 
     await conn.commit();
 
     return sendSuccess(res, {
       deleted: true,
+      archived: true,
       id,
       entryCode: entry.entry_code,
       title: entry.title,
-    }, '条目已删除');
+    }, '条目已归档（软删除）');
   } catch (err) {
     if (conn) {
       try { await conn.rollback(); } catch (_) {}
@@ -249,6 +253,73 @@ router.post('/users', async (req, res) => {
     return sendError(res, errors.DB_ERROR, '创建用户失败: ' + err.message);
   } finally {
     if (conn) conn.release();
+  }
+});
+
+// ============================================================
+// GET /api/admin/audit-logs — 操作日志列表
+// ============================================================
+router.get('/audit-logs', async (req, res) => {
+  try {
+    const { action, entry_id, page = 1, limit = 50 } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
+    const offset = (pageNum - 1) * limitNum;
+
+    const conditions = [];
+    const params = [];
+
+    if (action) {
+      conditions.push('log.action = ?');
+      params.push(action);
+    }
+
+    if (entry_id) {
+      const eid = parseInt(entry_id, 10);
+      if (eid > 0) {
+        conditions.push('log.entry_id = ?');
+        params.push(eid);
+      }
+    }
+
+    const whereClause = conditions.length > 0
+      ? 'WHERE ' + conditions.join(' AND ')
+      : '';
+
+    const [countRows] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM kb_audit_log log ${whereClause}`,
+      params
+    );
+    const total = countRows[0].total;
+
+    const [rows] = await pool.execute(
+      `SELECT log.id, log.entry_id, log.action, log.operator, log.detail, log.ip_address, log.created_at,
+              e.title AS entry_title, e.entry_code
+       FROM kb_audit_log log
+       LEFT JOIN kb_entries e ON log.entry_id = e.id
+       ${whereClause}
+       ORDER BY log.created_at DESC
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      params
+    );
+
+    const logs = rows.map((row) => ({
+      id: row.id,
+      entryId: row.entry_id,
+      action: row.action,
+      operator: row.operator,
+      detail: row.detail,
+      ipAddress: row.ip_address,
+      createdAt: row.created_at,
+      entryTitle: row.entry_title,
+      entryCode: row.entry_code,
+    }));
+
+    return sendSuccess(res, { logs, total, page: pageNum, limit: limitNum });
+  } catch (err) {
+    console.error('[admin] 查询操作日志失败:', err);
+    return sendError(res, errors.DB_ERROR, '查询操作日志失败: ' + err.message);
   }
 });
 

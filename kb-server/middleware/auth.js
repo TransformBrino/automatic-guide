@@ -8,13 +8,15 @@
 
 const jwt = require('jsonwebtoken');
 const config = require('../config');
+const pool = require('../db/connection');
 const { sendError } = require('../utils/response');
 const errors = require('../utils/errors');
 
 /**
  * JWT 认证中间件（必须登录）
+ * 验证 token 后额外检查用户 is_active 状态，确保被禁用的用户 token 立即失效
  */
-function authRequired(req, res, next) {
+async function authRequired(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return sendError(res, errors.AUTH_REQUIRED);
@@ -27,6 +29,21 @@ function authRequired(req, res, next) {
     if (!decoded.id || !decoded.username || !decoded.role) {
       return sendError(res, errors.AUTH_REQUIRED, 'token 内容无效');
     }
+
+    // 查询用户是否仍处于活跃状态（P8-T24：禁用用户 token 立即失效）
+    try {
+      const [rows] = await pool.execute(
+        'SELECT is_active FROM kb_users WHERE id = ? AND username = ? LIMIT 1',
+        [decoded.id, decoded.username]
+      );
+      if (rows.length === 0 || !rows[0].is_active) {
+        return sendError(res, errors.AUTH_REQUIRED, '用户已被禁用，请重新登录');
+      }
+    } catch (dbErr) {
+      // DB 查询失败时降级为仅校验 token（不影响服务可用性）
+      console.error('[auth] 查询用户活跃状态失败:', dbErr.message);
+    }
+
     req.user = { id: decoded.id, username: decoded.username, role: decoded.role };
     next();
   } catch (err) {

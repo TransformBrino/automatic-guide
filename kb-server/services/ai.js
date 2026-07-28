@@ -109,12 +109,13 @@ async function callAIOnce(body, attempt) {
     let replyText = message.content || '';
     // 提取深度思考内容（DeepSeek reasoning_content）
     const thinkingContent = message.reasoning_content || message.thinking || '';
-    if (thinkingContent && !replyText) {
-      // 如果只有思考内容没有回复，把思考内容作为回复
-      replyText = thinkingContent;
-    } else if (thinkingContent) {
-      // 将思考内容附加到回复前（用摘要形式）
-      replyText = replyText;
+
+    // ⚠️ 必须在修改 replyText 之前提取 SQL，否则思考内容中的 ```sql 会被误提取
+    const sqlStatements = extractSqlStatements(replyText);
+
+    // 将思考内容附加到 replyText 前（仅用于展示，不影响 SQL 提取）
+    if (thinkingContent) {
+      replyText = `🧠 深度思考\n\`\`\`\n${thinkingContent}\n\`\`\`\n\n---\n\n${replyText}`;
     }
 
     if (!replyText) {
@@ -123,7 +124,6 @@ async function callAIOnce(body, attempt) {
       throw err;
     }
 
-    const sqlStatements = extractSqlStatements(replyText);
     return { replyText, sqlStatements, thinking: thinkingContent };
   } catch (err) {
     // AbortError 视为超时

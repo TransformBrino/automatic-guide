@@ -23,6 +23,7 @@ const sqlExecutor = require('../services/sql-executor');
 const { generateEntryCode } = require('../services/entry-code');
 const searchService = require('../services/search');
 const pool = require('../db/connection');
+const config = require('../config');
 const { sendSuccess, sendError } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
@@ -54,9 +55,9 @@ router.post('/', async (req, res) => {
     // ---------- 步骤 3：构建 Prompt ----------
     let messages = promptBuilder.buildMessages(history, userMessage);
 
-    // ---------- 步骤 3.5：联网搜索（若开启） ----------
+    // ---------- 步骤 3.5：联网搜索（若开启，需全局配置和请求参数同时允许） ----------
     let searchResults = '';
-    if (enableWebSearch) {
+    if (config.ai.enableWebSearch && enableWebSearch) {
       searchResults = await searchService.search(userMessage);
       if (searchResults && !searchResults.startsWith('[联网搜索失败') && !searchResults.startsWith('[联网搜索超时')) {
         // 将搜索结果注入到系统 prompt 中
@@ -68,7 +69,7 @@ router.post('/', async (req, res) => {
     }
 
     // ---------- 步骤 4：调用 AI ----------
-    const { replyText, sqlStatements, thinking } = await ai.callAI(messages, { enableWebSearch, enableThinking });
+    let { replyText, sqlStatements, thinking } = await ai.callAI(messages, { enableWebSearch, enableThinking });
 
     // ---------- 步骤 5：分支处理 ----------
 
@@ -142,6 +143,16 @@ router.post('/', async (req, res) => {
       case 'select':
       default:
         responseData = handleSelectSuccess(result, replyText);
+        // 自动录入：当 SELECT 结果为空时，自动调用 AI 继续执行录入（无需人工确认）
+        if (responseData.results && responseData.results.length === 0) {
+          const autoData = await autoContinueInsert(messages, user, clientIp);
+          if (autoData) {
+            responseData = autoData;
+            // 同步更新 replyText 和 thinking，确保会话历史记录正确
+            if (autoData.message) replyText = autoData.message;
+            if (autoData.thinking) thinking = autoData.thinking;
+          }
+        }
         break;
     }
 
@@ -257,11 +268,21 @@ async function handleInsertSuccess(result, user, ip, replyText) {
   let entry = null;
 
   if (insertId) {
+    // 更新状态为 pending_review（进入审核流程），否则审核功能永远看不到新条目
+    try {
+      await pool.execute(
+        "UPDATE kb_entries SET status = 'pending_review' WHERE id = ? AND status = 'draft'",
+        [insertId]
+      );
+    } catch (e) {
+      console.error('[chat] 更新条目状态为 pending_review 失败:', e.message);
+    }
+
     // 写 audit_log
     try {
       await pool.execute(
         'INSERT INTO kb_audit_log (entry_id, action, operator, detail, ip_address) VALUES (?, ?, ?, ?, ?)',
-        [insertId, 'create', user.username, 'AI 辅助录入', ip]
+        [insertId, 'create', user.username, 'AI 辅助录入（待审核）', ip]
       );
     } catch (e) {
       console.error('[chat] 写 audit_log(create) 失败:', e.message);
@@ -418,6 +439,63 @@ function injectEntryCode(sql, entryCode, username) {
   );
 
   return result;
+}
+
+/**
+ * 自动续写录入：AI 返回空 SELECT 结果后，自动再调 AI 执行 INSERT
+ * 目的：消除用户手动确认环节，实现"一次发送模板即完成录入"
+ * @param {Array} messages - 当前完整的 messages 数组（含搜索注入）
+ * @param {Object} user - 当前用户
+ * @param {string} clientIp - 客户端 IP
+ * @returns {Promise<Object|null>} 录入成功则返回响应数据对象，否则返回 null
+ */
+async function autoContinueInsert(messages, user, clientIp) {
+  // 构造 follow-up prompt，指示 AI 直接执行录入
+  const followUpPrompt =
+    '查重通过，未发现重复条目。请根据用户原始需求直接执行录入操作，输出 INSERT 语句。';
+  const followUpMessages = [
+    ...messages,
+    { role: 'system', content: followUpPrompt },
+  ];
+
+  // 调用 AI（不启用搜索和思考，加速响应）
+  let secondCall;
+  try {
+    secondCall = await ai.callAI(followUpMessages, {});
+  } catch (e) {
+    console.error('[chat] 自动录入 AI 调用失败:', e.message);
+    return null;
+  }
+
+  const { replyText: secondReply, sqlStatements: secondSql, thinking: secondThinking } = secondCall;
+  const secondType = detectPrimaryType(secondSql || []);
+
+  // 仅当 AI 返回 INSERT 时才继续
+  if (secondType !== 'insert' || !secondSql || secondSql.length === 0) {
+    return null;
+  }
+
+  // 替换占位符 + 注入 entry_code
+  let processedSqls = secondSql.map((sql) =>
+    sql.replace(/__CREATED_BY__/g, escapeSqlString(user.username))
+  );
+
+  const entryCode = await generateEntryCodeForInsert();
+  processedSqls = processedSqls.map((sql) =>
+    injectEntryCode(sql, entryCode, user.username)
+  );
+
+  // 安全执行
+  const result = await sqlExecutor.validateAndExecute(processedSqls, user.id);
+  if (!result.success) {
+    console.error('[chat] 自动录入 SQL 执行失败:', result.error);
+    return null;
+  }
+
+  // 构造响应
+  const responseData = await handleInsertSuccess(result, user, clientIp, secondReply);
+  if (secondThinking) responseData.thinking = secondThinking;
+  return responseData;
 }
 
 module.exports = router;

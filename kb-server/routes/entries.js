@@ -19,7 +19,8 @@ router.use(authRequired);
 router.get('/', async (req, res) => {
   try {
     const {
-      q, knowledge_type, scene, status,
+      q, knowledge_type, architecture_layer, scene, status, created_by,
+      created_after, created_before,
       page = 1, limit = 20,
       sort = 'created_at', order = 'DESC',
     } = req.query;
@@ -43,6 +44,11 @@ router.get('/', async (req, res) => {
       params.push(knowledge_type);
     }
 
+    if (architecture_layer) {
+      conditions.push('architecture_layer = ?');
+      params.push(architecture_layer);
+    }
+
     if (scene) {
       conditions.push('scene = ?');
       params.push(scene);
@@ -51,6 +57,21 @@ router.get('/', async (req, res) => {
     if (status) {
       conditions.push('status = ?');
       params.push(status);
+    }
+
+    if (created_by && typeof created_by === 'string' && created_by.trim() !== '') {
+      conditions.push('created_by = ?');
+      params.push(created_by.trim());
+    }
+
+    if (created_after) {
+      conditions.push('created_at >= ?');
+      params.push(created_after);
+    }
+
+    if (created_before) {
+      conditions.push('created_at <= ?');
+      params.push(created_before + ' 23:59:59');
     }
 
     const whereClause = conditions.length > 0
@@ -241,6 +262,56 @@ router.get('/:id/history', async (req, res) => {
   } catch (err) {
     console.error('[entries] 历史查询失败:', err);
     return sendError(res, errors.DB_ERROR, '查询版本历史失败: ' + err.message);
+  }
+});
+
+// ============================================================
+// GET /api/entries/:id/related — 相关条目推荐
+// 规则：同 scene 优先，同 knowledge_type 次之，排除自身，取 5 条
+// ============================================================
+router.get('/:id/related', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id || id <= 0) {
+      return sendError(res, errors.VALIDATION_ERROR, '无效的条目 ID');
+    }
+
+    const [[entry]] = await pool.execute(
+      'SELECT scene, knowledge_type FROM kb_entries WHERE id = ? LIMIT 1',
+      [id]
+    );
+    if (!entry) {
+      return sendError(res, errors.NOT_FOUND, '知识条目不存在');
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT id, entry_code, title, knowledge_type, scene, summary, score_total, status, created_at
+       FROM kb_entries
+       WHERE id != ? AND status NOT IN ('archived','rejected')
+         AND (scene = ? OR knowledge_type = ?)
+       ORDER BY (CASE WHEN scene = ? THEN 0 ELSE 1 END),
+                score_total DESC,
+                created_at DESC
+       LIMIT 5`,
+      [id, entry.scene, entry.knowledge_type, entry.scene]
+    );
+
+    const related = rows.map((row) => ({
+      id: row.id,
+      entryCode: row.entry_code,
+      title: row.title,
+      knowledgeType: row.knowledge_type,
+      scene: row.scene,
+      summary: row.summary,
+      scoreTotal: row.score_total,
+      status: row.status,
+      createdAt: row.created_at,
+    }));
+
+    return sendSuccess(res, { related });
+  } catch (err) {
+    console.error('[entries] 相关推荐查询失败:', err);
+    return sendError(res, errors.DB_ERROR, '查询相关条目失败: ' + err.message);
   }
 });
 
