@@ -44,14 +44,13 @@ async function callAI(messages, options = {}) {
     temperature: 0.3,
   };
 
-  // 联网搜索参数（DeepSeek enable_web_search）
-  if (options.enableWebSearch || config.ai.enableWebSearch) {
+  // 联网搜索参数（需全局配置和请求参数同时允许）
+  if (options.enableWebSearch && config.ai.enableWebSearch) {
     body.enable_web_search = true;
   }
 
-  // 深度思考参数
-  if (options.enableThinking || config.ai.enableThinking) {
-    // DeepSeek 深度思考：使用 reasoning 模型或传入 thinking 参数
+  // 深度思考参数（需全局配置和请求参数同时允许）
+  if (options.enableThinking && config.ai.enableThinking) {
     body.enable_thinking = true;
   }
 

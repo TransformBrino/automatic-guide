@@ -11,16 +11,19 @@ const router = express.Router();
 
 const pool = require('../db/connection');
 const config = require('../config');
-const { sendSuccess, sendError } = require('../utils/response');
+const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
+const { loginLimiter } = require('../middleware/rate-limiter');
 
 /**
  * POST /api/auth/login
  * 请求体：{ username, password }
  * 响应 data：{ token, user: { id, username, displayName, role } }
+ *
+ * P9-T2：防暴力破解 — 连续 5 次失败锁定 15 分钟，成功后重置计数
  */
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginLimiter, async (req, res, next) => { // P9-T1：登录限流 5 次/分钟/IP
   try {
     const { username, password } = req.body || {};
 
@@ -29,9 +32,9 @@ router.post('/login', async (req, res, next) => {
       return sendError(res, errors.VALIDATION_ERROR, '用户名和密码不能为空');
     }
 
-    // 查询用户（仅查激活用户）
+    // 查询用户（含防暴力破解字段）
     const [rows] = await pool.execute(
-      'SELECT id, username, display_name, role, password_hash, is_active FROM kb_users WHERE username = ? LIMIT 1',
+      'SELECT id, username, display_name, role, password_hash, is_active, login_attempts, locked_until FROM kb_users WHERE username = ? LIMIT 1',
       [username]
     );
 
@@ -44,10 +47,39 @@ router.post('/login', async (req, res, next) => {
       return sendError(res, errors.AUTH_REQUIRED, '账号已被停用');
     }
 
+    // P9-T2：检查是否被锁定
+    if (user.locked_until && new Date(user.locked_until) > new Date()) {
+      const minutes = Math.ceil((new Date(user.locked_until) - Date.now()) / 60000);
+      return sendError(res, errors.AUTH_REQUIRED,
+        `账户已临时锁定，请 ${minutes} 分钟后重试`);
+    }
+
     // bcrypt 比对密码
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) {
+      // P9-T2：增加失败计数，达到阈值后锁定 15 分钟
+      const newAttempts = (user.login_attempts || 0) + 1;
+      if (newAttempts >= 5) {
+        await pool.execute(
+          'UPDATE kb_users SET login_attempts = ?, locked_until = DATE_ADD(NOW(), INTERVAL 15 MINUTE) WHERE id = ?',
+          [newAttempts, user.id]
+        );
+        return sendError(res, errors.AUTH_REQUIRED,
+          '密码连续错误 5 次，账户已锁定 15 分钟');
+      }
+      await pool.execute(
+        'UPDATE kb_users SET login_attempts = ? WHERE id = ?',
+        [newAttempts, user.id]
+      );
       return sendError(res, errors.AUTH_REQUIRED, '用户名或密码错误');
+    }
+
+    // P9-T2：登录成功，重置失败计数和锁定
+    if (user.login_attempts > 0 || user.locked_until) {
+      await pool.execute(
+        'UPDATE kb_users SET login_attempts = 0, locked_until = NULL WHERE id = ?',
+        [user.id]
+      );
     }
 
     // 签发 JWT（含 id/username/role，8 小时过期）
@@ -67,7 +99,7 @@ router.post('/login', async (req, res, next) => {
       },
     }, '登录成功');
   } catch (err) {
-    return sendError(res, errors.DB_ERROR, '登录失败：' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('登录失败', err));
   }
 });
 
@@ -108,7 +140,7 @@ router.post('/change-password', authRequired, async (req, res, next) => {
 
     return sendSuccess(res, {}, '密码修改成功');
   } catch (err) {
-    return sendError(res, errors.DB_ERROR, '密码修改失败：' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('密码修改失败', err));
   }
 });
 

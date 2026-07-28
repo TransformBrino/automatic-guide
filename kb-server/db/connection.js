@@ -17,6 +17,9 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0,
   charset: 'utf8mb4',
+  // P9-T24：TCP keep-alive 防止长时间空闲后 MySQL 断开连接（30s 探测）
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 30000,
 });
 
 // 自测：仅在直接运行本文件时执行连通性检查

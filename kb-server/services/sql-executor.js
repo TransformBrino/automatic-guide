@@ -195,6 +195,7 @@ async function validateAndExecute(sqlStatements, userId, options = {}) {
 
       // 原子递增：INSERT ... ON DUPLICATE KEY UPDATE 是 MySQL 原子操作
       // 即使并发请求同时执行，也不会产生相同序号
+      // 事务内 SELECT 读取自己刚更新的值（InnoDB 排他锁保护），并发安全
       await conn.execute(
         'INSERT INTO kb_code_sequence (date_key, seq) VALUES (?, 1) ON DUPLICATE KEY UPDATE seq = seq + 1',
         [dateStr]

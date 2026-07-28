@@ -18,9 +18,10 @@ const MAX_MESSAGES = 40;
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 
-// 持久化定时器（每 30 秒写一次文件，减少 IO）
+// 持久化定时器（每 5 秒检查脏数据，减少 IO；P9-T8：从 30s 降至 5s）
 let saveTimer = null;
 let dirty = false;
+let debounceTimer = null; // P9-T8：防抖写入，appendMessage 后 300ms 立即落盘
 
 // ============================================================
 // 文件持久化
@@ -78,9 +79,18 @@ function saveToFile() {
 
 /**
  * 标记为脏数据，启动延迟保存
+ * P9-T8：标记脏数据后启动 300ms 防抖写入，确保消息快速落盘
  */
 function markDirty() {
   dirty = true;
+  // 防抖写入：每次 markDirty 重置 300ms 计时器
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    if (dirty) {
+      saveToFile();
+    }
+  }, 300);
+  debounceTimer.unref(); // 不阻止进程退出
 }
 
 // ============================================================
@@ -165,12 +175,12 @@ function startCleanupTimer() {
     }
   }, INTERVAL);
 
-  // 定时持久化（每 30 秒检查脏数据）
+  // 定时持久化（每 5 秒检查脏数据，P9-T8：从 30s 降至 5s）
   saveTimer = setInterval(() => {
     if (dirty) {
       saveToFile();
     }
-  }, 30 * 1000);
+  }, 5 * 1000);
 
   // 进程退出时保存
   process.on('exit', () => {

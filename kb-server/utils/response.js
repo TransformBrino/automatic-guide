@@ -37,4 +37,19 @@ function sendError(res, code, customMessage, httpStatus) {
   });
 }
 
-module.exports = { sendSuccess, sendError };
+/**
+ * P9-T3：生产环境屏蔽内部错误细节
+ * 在 catch 块中包装原始 err.message，生产环境返回通用描述，开发环境保留详情
+ * @param {string} prefix - 错误前缀（如 '查询知识条目失败'）
+ * @param {Error|string} err - 原始错误对象或消息
+ * @returns {string} 安全处理后的错误消息
+ */
+function safeErrorMsg(prefix, err) {
+  if (process.env.NODE_ENV === 'production') {
+    return prefix;
+  }
+  const detail = typeof err === 'string' ? err : (err?.message || '');
+  return detail ? `${prefix}: ${detail}` : prefix;
+}
+
+module.exports = { sendSuccess, sendError, safeErrorMsg };

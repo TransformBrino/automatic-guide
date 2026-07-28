@@ -112,6 +112,8 @@ CREATE TABLE kb_users (
   role        ENUM('contributor','reviewer','admin') DEFAULT 'contributor',
   password_hash VARCHAR(255) NOT NULL,
   is_active   TINYINT(1) DEFAULT 1,
+  login_attempts INT NOT NULL DEFAULT 0 COMMENT '连续登录失败次数（P9-T2）',
+  locked_until DATETIME NULL COMMENT '账户锁定截止时间（P9-T2）',
   created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 

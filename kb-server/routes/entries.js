@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db/connection');
-const { sendSuccess, sendError } = require('../utils/response');
+const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
 
@@ -127,7 +127,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     console.error('[entries] 列表查询失败:', err);
-    return sendError(res, errors.DB_ERROR, '查询知识条目失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('查询知识条目失败', err));
   }
 });
 
@@ -221,12 +221,12 @@ router.get('/:id', async (req, res) => {
     return sendSuccess(res, { entry, tags, versions });
   } catch (err) {
     console.error('[entries] 详情查询失败:', err);
-    return sendError(res, errors.DB_ERROR, '查询条目详情失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('查询条目详情失败', err));
   }
 });
 
 // ============================================================
-// GET /api/entries/:id/history — 版本历史列表
+// GET /api/entries/:id/history — 版本历史列表（P9-T27：分页 + 不含大字段）
 // ============================================================
 router.get('/:id/history', async (req, res) => {
   try {
@@ -235,17 +235,30 @@ router.get('/:id/history', async (req, res) => {
       return sendError(res, errors.VALIDATION_ERROR, '无效的条目 ID');
     }
 
+    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
     // 确认条目存在
     const [check] = await pool.execute('SELECT id FROM kb_entries WHERE id = ? LIMIT 1', [id]);
     if (check.length === 0) {
       return sendError(res, errors.NOT_FOUND, '知识条目不存在');
     }
 
+    // 总数
+    const [countRows] = await pool.execute(
+      'SELECT COUNT(*) AS total FROM kb_version_history WHERE entry_id = ?',
+      [id]
+    );
+    const total = countRows[0].total;
+
+    // 分页查询（不含 full_content_snapshot 大字段）
     const [rows] = await pool.execute(
-      `SELECT id, version_label, change_summary, changed_by, full_content_snapshot, created_at
+      `SELECT id, version_label, change_summary, changed_by, created_at
        FROM kb_version_history
        WHERE entry_id = ?
-       ORDER BY created_at DESC`,
+       ORDER BY created_at DESC
+       LIMIT ${limitNum} OFFSET ${offset}`,
       [id]
     );
 
@@ -254,14 +267,53 @@ router.get('/:id/history', async (req, res) => {
       versionLabel: row.version_label,
       changeSummary: row.change_summary,
       changedBy: row.changed_by,
-      fullContentSnapshot: row.full_content_snapshot,
       createdAt: row.created_at,
     }));
 
-    return sendSuccess(res, { entryId: id, history });
+    return sendSuccess(res, { entryId: id, history, total, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error('[entries] 历史查询失败:', err);
-    return sendError(res, errors.DB_ERROR, '查询版本历史失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('查询版本历史失败', err));
+  }
+});
+
+// ============================================================
+// GET /api/entries/:id/history/:versionId — 版本详情（含 full_content_snapshot）
+// ============================================================
+router.get('/:id/history/:versionId', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const versionId = parseInt(req.params.versionId, 10);
+    if (!id || id <= 0 || !versionId || versionId <= 0) {
+      return sendError(res, errors.VALIDATION_ERROR, '无效的 ID');
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT id, version_label, change_summary, changed_by, full_content_snapshot, created_at
+       FROM kb_version_history
+       WHERE id = ? AND entry_id = ?
+       LIMIT 1`,
+      [versionId, id]
+    );
+
+    if (rows.length === 0) {
+      return sendError(res, errors.NOT_FOUND, '版本记录不存在');
+    }
+
+    const row = rows[0];
+    return sendSuccess(res, {
+      version: {
+        id: row.id,
+        versionLabel: row.version_label,
+        changeSummary: row.change_summary,
+        changedBy: row.changed_by,
+        fullContentSnapshot: row.full_content_snapshot,
+        createdAt: row.created_at,
+      },
+    });
+  } catch (err) {
+    console.error('[entries] 版本详情查询失败:', err);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('查询版本详情失败', err));
   }
 });
 
@@ -311,7 +363,7 @@ router.get('/:id/related', async (req, res) => {
     return sendSuccess(res, { related });
   } catch (err) {
     console.error('[entries] 相关推荐查询失败:', err);
-    return sendError(res, errors.DB_ERROR, '查询相关条目失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('查询相关条目失败', err));
   }
 });
 

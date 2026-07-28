@@ -8,7 +8,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const router = express.Router();
 const pool = require('../db/connection');
-const { sendSuccess, sendError } = require('../utils/response');
+const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired, requireRole } = require('../middleware/auth');
 
@@ -69,7 +69,7 @@ router.delete('/entries/:id', async (req, res) => {
       try { await conn.rollback(); } catch (_) {}
     }
     console.error('[admin] 删除条目失败:', err);
-    return sendError(res, errors.DB_ERROR, '删除条目失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('删除条目失败', err));
   } finally {
     if (conn) conn.release();
   }
@@ -132,7 +132,7 @@ router.post('/entries/:id/archive', async (req, res) => {
       try { await conn.rollback(); } catch (_) {}
     }
     console.error('[admin] 归档条目失败:', err);
-    return sendError(res, errors.DB_ERROR, '归档条目失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('归档条目失败', err));
   } finally {
     if (conn) conn.release();
   }
@@ -188,7 +188,7 @@ router.get('/users', async (req, res) => {
     return sendSuccess(res, { users, total, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error('[admin] 查询用户列表失败:', err);
-    return sendError(res, errors.DB_ERROR, '查询用户列表失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('查询用户列表失败', err));
   }
 });
 
@@ -250,7 +250,7 @@ router.post('/users', async (req, res) => {
       try { await conn.rollback(); } catch (_) {}
     }
     console.error('[admin] 创建用户失败:', err);
-    return sendError(res, errors.DB_ERROR, '创建用户失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('创建用户失败', err));
   } finally {
     if (conn) conn.release();
   }
@@ -319,7 +319,7 @@ router.get('/audit-logs', async (req, res) => {
     return sendSuccess(res, { logs, total, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error('[admin] 查询操作日志失败:', err);
-    return sendError(res, errors.DB_ERROR, '查询操作日志失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('查询操作日志失败', err));
   }
 });
 

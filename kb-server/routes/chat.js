@@ -23,12 +23,14 @@ const sqlExecutor = require('../services/sql-executor');
 const searchService = require('../services/search');
 const pool = require('../db/connection');
 const config = require('../config');
-const { sendSuccess, sendError } = require('../utils/response');
+const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
+const { chatLimiter } = require('../middleware/rate-limiter');
 
-// 所有 /api/chat 接口都需要登录
+// 所有 /api/chat 接口都需要登录 + 限流
 router.use(authRequired);
+router.use(chatLimiter); // P9-T1：对话限流 20 次/分钟/用户
 
 /**
  * POST /api/chat — 核心对话接口
@@ -144,12 +146,16 @@ router.post('/', async (req, res) => {
         responseData = handleSelectSuccess(result, replyText);
         // 自动录入：当 SELECT 结果为空时，自动调用 AI 继续执行录入（无需人工确认）
         if (responseData.results && responseData.results.length === 0) {
+          // P9-T26：保存第一轮 AI 响应，后续写入 session
+          const firstReplyText = replyText;
           const autoData = await autoContinueInsert(messages, user, clientIp);
           if (autoData) {
             responseData = autoData;
-            // 同步更新 replyText 和 thinking，确保会话历史记录正确
             if (autoData.message) replyText = autoData.message;
             if (autoData.thinking) thinking = autoData.thinking;
+            // 标记自动录入已完成，步骤 6 将追记第一轮查重推理
+            res.locals._autoInsertDone = true;
+            res.locals._firstReplyText = firstReplyText;
           }
         }
         break;
@@ -157,6 +163,10 @@ router.post('/', async (req, res) => {
 
     // ---------- 步骤 6：清理（追加对话上下文，session 自动截断） ----------
     session.appendMessage(sessionId, 'user', userMessage);
+    // P9-T26：自动录入成功后，追记第一轮 AI 的查重推理，保留完整对话链
+    if (res.locals._autoInsertDone && res.locals._firstReplyText) {
+      session.appendMessage(sessionId, 'assistant', res.locals._firstReplyText);
+    }
     session.appendMessage(sessionId, 'assistant', replyText);
 
     return sendSuccess(res, withThinking({ ...responseData, sessionId }));
@@ -164,10 +174,10 @@ router.post('/', async (req, res) => {
     // AI 调用失败（超时 / HTTP 错误）
     if (err.isTimeout || err.httpStatus) {
       console.error('[chat] AI 调用失败:', err.message);
-      return sendError(res, errors.AI_API_ERROR, `AI 调用失败: ${err.message}`);
+      return sendError(res, errors.AI_API_ERROR, safeErrorMsg('AI 调用失败', err));
     }
     console.error('[chat] 未预期错误:', err);
-    return sendError(res, errors.INTERNAL_ERROR, err.message || '服务器内部错误');
+    return sendError(res, errors.INTERNAL_ERROR, safeErrorMsg('服务器内部错误', err));
   }
 });
 

@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db/connection');
-const { sendSuccess, sendError } = require('../utils/response');
+const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
 
@@ -81,7 +81,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     console.error('[stats] 统计查询失败:', err);
-    return sendError(res, errors.DB_ERROR, '统计查询失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('统计查询失败', err));
   }
 });
 

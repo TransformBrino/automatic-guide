@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db/connection');
-const { sendSuccess, sendError } = require('../utils/response');
+const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired, requireRole } = require('../middleware/auth');
 
@@ -75,7 +75,7 @@ router.get('/pending', requireRole('reviewer', 'admin'), async (req, res) => {
     return sendSuccess(res, { entries, total, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error('[review] 查询待审核列表失败:', err);
-    return sendError(res, errors.DB_ERROR, '查询待审核列表失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('查询待审核列表失败', err));
   }
 });
 
@@ -124,9 +124,9 @@ router.post('/:id', requireRole('reviewer', 'admin'), async (req, res) => {
     conn = await pool.getConnection();
     await conn.beginTransaction();
 
-    // 查询条目
+    // 查询条目（同时获取 review_cycle）
     const [entryRows] = await conn.execute(
-      'SELECT id, status FROM kb_entries WHERE id = ? LIMIT 1 FOR UPDATE',
+      'SELECT id, status, review_cycle FROM kb_entries WHERE id = ? LIMIT 1 FOR UPDATE',
       [id]
     );
 
@@ -155,8 +155,15 @@ router.post('/:id', requireRole('reviewer', 'admin'), async (req, res) => {
       }
       updateFields.push('score_total = ?');
       updateParams.push(totalScore);
-      // 计算下次复审日期（默认复审周期为 monthly，即 30 天后）
-      updateFields.push('next_review_date = DATE_ADD(NOW(), INTERVAL 30 DAY)');
+      // 根据条目的 review_cycle 动态计算下次复审日期（P9-T5 修复）
+      const REVIEW_CYCLE_DAYS = {
+        weekly: 7,
+        monthly: 30,
+        quarterly: 90,
+        semi_annual: 180,
+      };
+      const cycleDays = REVIEW_CYCLE_DAYS[entry.review_cycle] || 30;
+      updateFields.push(`next_review_date = DATE_ADD(NOW(), INTERVAL ${cycleDays} DAY)`);
     } else {
       updateFields.push("status = 'rejected'");
     }
@@ -199,7 +206,7 @@ router.post('/:id', requireRole('reviewer', 'admin'), async (req, res) => {
       try { await conn.rollback(); } catch (_) {}
     }
     console.error('[review] 审核操作失败:', err);
-    return sendError(res, errors.DB_ERROR, '审核操作失败: ' + err.message);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('审核操作失败', err));
   } finally {
     if (conn) conn.release();
   }
