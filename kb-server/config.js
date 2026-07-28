@@ -42,6 +42,8 @@ const config = {
     model: process.env.AI_MODEL,
     timeoutMs: 30000, // 30 秒超时
     maxRetries: 1, // 最多重试 1 次
+    enableWebSearch: process.env.ENABLE_WEB_SEARCH === 'true' || false,
+    enableThinking: process.env.ENABLE_THINKING === 'true' || false,
   },
   // JWT
   jwt: {

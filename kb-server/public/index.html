@@ -92,6 +92,7 @@ a{color:var(--primary);text-decoration:none}
 .message-card.success .message-card-title{color:var(--success)}
 .message-card.error .message-card-title{color:var(--danger)}
 .message-card.info .message-card-title{color:var(--primary)}
+.thinking-content{font-size:12px;color:#8b8fa3;background:#f5f5f8;padding:8px 12px;margin:0 -16px 8px -16px;border-bottom:1px solid var(--border);white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;line-height:1.5}
 .message-card-body{font-size:13px;color:var(--text-secondary)}
 .message-card-body .entry-item{padding:8px;background:#f8f9fa;border-radius:6px;margin-bottom:6px;cursor:pointer;transition:var(--transition)}
 .message-card-body .entry-item:hover{background:#e8f0fe}
@@ -103,7 +104,11 @@ a{color:var(--primary);text-decoration:none}
 .typing-indicator span:nth-child(1){animation-delay:-.32s}
 .typing-indicator span:nth-child(2){animation-delay:-.16s}
 @keyframes bounce{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}
-.chat-input-area{background:#fff;border-top:1px solid var(--border);padding:12px 20px;display:flex;gap:10px;align-items:flex-end;border-radius:0 0 var(--radius-lg) var(--radius-lg)}
+.chat-input-area{background:#fff;border-top:1px solid var(--border);padding:12px 20px;display:flex;gap:10px;align-items:flex-end;border-radius:0 0 var(--radius-lg) var(--radius-lg);flex-wrap:wrap}
+.chat-toolbar{width:100%;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+.chat-toolbar .tool-btn{padding:4px 12px;border:1px solid var(--border);border-radius:var(--radius);background:#f8f9fa;color:var(--text);font-size:12px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.chat-toolbar .tool-btn:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
+.chat-toolbar .toggle-btn.active{background:var(--primary);color:#fff;border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
 .input-wrapper{flex:1;display:flex;gap:8px;align-items:flex-end;background:#f1f3f4;border-radius:12px;padding:8px 12px;border:1px solid transparent;transition:var(--transition)}
 .input-wrapper:focus-within{border-color:var(--primary);background:#fff}
 #chatInput{flex:1;border:none;background:transparent;resize:none;max-height:120px;min-height:24px;line-height:1.5;font-size:14px;overflow-y:auto}
@@ -202,7 +207,18 @@ a{color:var(--primary);text-decoration:none}
 .toast.error{background:var(--danger)}
 .toast.info{background:var(--primary)}
 
-/* ========== Tab5 管理 ========== */
+/* ============ 快速录入弹窗 ============ */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:999;display:none;justify-content:center;align-items:center;animation:fadeIn .2s}
+.modal-overlay.active{display:flex}
+.modal{background:#fff;border-radius:var(--radius-lg);padding:24px;width:90%;max-width:560px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.15);animation:slideUp .25s ease}
+.modal h3{margin:0 0 16px 0;font-size:16px;color:var(--text)}
+.modal .form-group{margin-bottom:12px}
+.modal .form-group label{display:block;font-size:12px;color:var(--text-light);margin-bottom:4px}
+.modal .form-group input,.modal .form-group select,.modal .form-group textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;box-sizing:border-box;font-family:inherit}
+.modal .form-group textarea{resize:vertical;min-height:60px}
+.modal .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
 .admin-tabs{display:flex;gap:4px;margin-bottom:16px;background:#fff;border-radius:var(--radius-lg);padding:4px;box-shadow:var(--shadow);width:fit-content}
 .admin-tab{padding:8px 16px;border-radius:var(--radius);font-size:13px;color:var(--text-secondary);cursor:pointer;transition:var(--transition)}
 .admin-tab.active{background:var(--primary);color:#fff}
@@ -308,6 +324,15 @@ a{color:var(--primary);text-decoration:none}
           </div>
         </div>
         <div class="chat-input-area">
+          <div class="chat-toolbar">
+            <button class="tool-btn" onclick="fillTemplate('fault')">📝 录入故障</button>
+            <button class="tool-btn" onclick="fillTemplate('sop')">📋 录入SOP</button>
+            <button class="tool-btn" onclick="fillTemplate('experience')">💡 录经验</button>
+            <button class="tool-btn" onclick="showEntryForm()">📄 快速录入</button>
+            <span style="flex:1"></span>
+            <button class="tool-btn toggle-btn" id="thinkToggle" onclick="toggleThinking()">🧠 深度思考</button>
+            <button class="tool-btn toggle-btn" id="searchToggle" onclick="toggleWebSearch()">🌐 联网搜索</button>
+          </div>
           <div class="input-wrapper">
             <textarea id="chatInput" placeholder="输入消息... (Enter 发送 / Shift+Enter 换行)" rows="1"></textarea>
             <div class="input-actions">
@@ -490,6 +515,64 @@ a{color:var(--primary);text-decoration:none}
 
 <div class="toast" id="toast"></div>
 
+<!-- ====== 快速录入弹窗 ====== -->
+<div class="modal-overlay" id="entryModal">
+  <div class="modal">
+    <h3>📄 快速录入知识条目</h3>
+    <div class="form-group">
+      <label>标题 *</label>
+      <input id="fmTitle" placeholder="条目标题">
+    </div>
+    <div class="form-group">
+      <label>知识类型 *</label>
+      <select id="fmType">
+        <option value="fault_case">故障案例</option>
+        <option value="sop">标准作业流程</option>
+        <option value="experience_rule">经验规则</option>
+        <option value="scene_portrait">场景画像</option>
+        <option value="tool_script">工具脚本</option>
+        <option value="ai_template">AI模板</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>架构层 *</label>
+      <select id="fmLayer">
+        <option value="">请选择</option>
+        <option value="L1">L1-设备层</option>
+        <option value="L2">L2-系统层</option>
+        <option value="L3">L3-应用层</option>
+        <option value="L4">L4-业务层</option>
+        <option value="L5">L5-决策层</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>场景</label>
+      <input id="fmScene" placeholder="如：仓库A、化工车间">
+    </div>
+    <div class="form-group">
+      <label>严重程度</label>
+      <select id="fmSeverity">
+        <option value="P2-一般">P2-一般</option>
+        <option value="P0-紧急">P0-紧急</option>
+        <option value="P1-严重">P1-严重</option>
+        <option value="P3-提示">P3-提示</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>摘要 *</label>
+      <textarea id="fmSummary" placeholder="1-2句话概括" rows="2"></textarea>
+    </div>
+    <div class="form-group">
+      <label>详细内容 (Markdown) *</label>
+      <textarea id="fmContent" placeholder="详细描述..." rows="4"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="hideEntryForm()">取消</button>
+      <button class="btn btn-primary" onclick="submitEntryForm()">提交录入</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ============ 全局状态 ============ */
 const state = {
@@ -499,6 +582,8 @@ const state = {
   sessionId: crypto.randomUUID ? crypto.randomUUID() : 's-' + Date.now() + '-' + Math.random().toString(36).slice(2),
   messages: [],
   isGenerating: false,
+  enableWebSearch: false,
+  enableThinking: false,
   kbPage: 1,
   kbTotal: 0,
   kbData: [],
@@ -524,13 +609,27 @@ document.querySelectorAll('.nav-tab').forEach(t=>t.addEventListener('click',()=>
 
 /* ============ Tab1: 对话 ============ */
 function newChat(){state.sessionId=crypto.randomUUID?crypto.randomUUID():'s-'+Date.now()+'-'+Math.random().toString(36).slice(2);state.messages=[];renderChat();toast('已新建对话','info')}
-async function sendChat(){ const input=$('chatInput');const msg=input.value.trim(); if(!msg||state.isGenerating)return; state.isGenerating=true; input.value=''; input.style.height='auto'; const userMsg={role:'user',content:msg,time:Date.now()};state.messages.push(userMsg);renderChat();try{const resp=await api('/chat',{method:'POST',body:JSON.stringify({message:msg,sessionId:state.sessionId})}); if(resp.success){state.messages.push({role:'ai',content:resp.data,time:Date.now(),type:resp.data.type});}else{state.messages.push({role:'ai',content:{type:'error',message:resp.error||'请求失败'},time:Date.now()});} }catch(e){state.messages.push({role:'ai',content:{type:'error',message:'网络错误'},time:Date.now()});} finally{state.isGenerating=false;renderChat();} }
+async function sendChat(){ const input=$('chatInput');const msg=input.value.trim(); if(!msg||state.isGenerating)return; state.isGenerating=true; input.value=''; input.style.height='auto'; const userMsg={role:'user',content:msg,time:Date.now()};state.messages.push(userMsg);renderChat();try{const resp=await api('/chat',{method:'POST',body:JSON.stringify({message:msg,sessionId:state.sessionId,enableWebSearch:state.enableWebSearch,enableThinking:state.enableThinking})}); if(resp.success){state.messages.push({role:'ai',content:resp.data,time:Date.now(),type:resp.data.type});}else{state.messages.push({role:'ai',content:{type:'error',message:resp.error||'请求失败'},time:Date.now()});} }catch(e){state.messages.push({role:'ai',content:{type:'error',message:'网络错误'},time:Date.now()});} finally{state.isGenerating=false;renderChat();} }
+
+/* ============ 模式切换 ============ */
+function toggleThinking(){state.enableThinking=!state.enableThinking;$('thinkToggle').classList.toggle('active',state.enableThinking);toast(state.enableThinking?'深度思考已开启':'深度思考已关闭','info')}
+function toggleWebSearch(){state.enableWebSearch=!state.enableWebSearch;$('searchToggle').classList.toggle('active',state.enableWebSearch);toast(state.enableWebSearch?'联网搜索已开启':'联网搜索已关闭','info')}
 function renderChat(){const box=$('chatMessages');if(state.messages.length===0){box.innerHTML='<div class="chat-welcome"><div class="chat-welcome-icon">🤖</div><h2>您好，我是知识库助手</h2><p>我可以帮您录入知识、查询条目、审核内容<br>请描述您的问题或需求</p></div>';return}box.innerHTML='';state.messages.forEach(m=>box.appendChild(renderMessage(m)));box.scrollTop=box.scrollHeight}
 function renderMessage(m){const wrap=document.createElement('div');wrap.className='message '+m.role;const avatar=document.createElement('div');avatar.className='message-avatar';avatar.textContent=m.role==='user'?(state.user.displayName||state.user.username).charAt(0).toUpperCase():'AI';const content=document.createElement('div');content.className='message-content';if(m.role==='user'){const b=document.createElement('div');b.className='message-bubble';b.textContent=m.content;content.appendChild(b)}else{if(typeof m.content==='string'){const b=document.createElement('div');b.className='message-bubble';b.textContent=m.content;content.appendChild(b)}else{content.appendChild(renderAiCard(m.content))}}const time=document.createElement('div');time.className='message-time';time.textContent=new Date(m.time).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});content.appendChild(time);wrap.appendChild(avatar);wrap.appendChild(content);return wrap}
-function renderAiCard(d){const card=document.createElement('div');const typeMap={entry_created:'success',entry_updated:'success',entry_deleted:'success',error:'error',query_result:'info',follow_up:''};const labelMap={entry_created:'✅ 条目创建成功',entry_updated:'✅ 条目更新成功',entry_deleted:'🗑️ 条目已删除',error:'❌ 操作失败',query_result:'🔍 查询结果',follow_up:'💬 追问'};const style=typeMap[d.type]||'';card.className='message-card '+style;if(d.type==='follow_up'){card.style.borderLeft='none';card.style.background='transparent';const b=document.createElement('div');b.className='message-bubble';b.style.background='#fff';b.style.border='1px solid var(--border)';b.textContent=d.message||'请补充信息';return b}const title=document.createElement('div');title.className='message-card-title';title.textContent=labelMap[d.type]||d.type;const body=document.createElement('div');body.className='message-card-body';if(d.type==='entry_created'||d.type==='entry_updated'){if(d.entry){const e=d.entry;body.innerHTML+='<div style="margin-top:4px"><strong>'+escapeHtml(e.entryCode||'')+'</strong> · '+escapeHtml(e.title||'')+'</div>'}}if(d.type==='query_result'&&d.results){body.innerHTML+='<div style="margin-top:8px">共找到 '+d.results.length+' 条结果</div>';d.results.forEach(r=>{const item=document.createElement('div');item.className='entry-item';item.innerHTML='<div class="entry-item-title">'+escapeHtml(r.title||'')+'</div><div class="entry-item-summary">'+escapeHtml(r.summary||'')+'</div><div class="entry-meta"><span>'+escapeHtml(r.knowledge_type||'')+'</span><span>'+escapeHtml(r.status||'')+'</span></div>';body.appendChild(item)})}if(d.type==='error'){body.textContent=d.message||'未知错误'}card.appendChild(title);card.appendChild(body);return card}
+function renderAiCard(d){const card=document.createElement('div');const typeMap={entry_created:'success',entry_updated:'success',entry_deleted:'success',error:'error',query_result:'info',follow_up:''};const labelMap={entry_created:'✅ 条目创建成功',entry_updated:'✅ 条目更新成功',entry_deleted:'🗑️ 条目已删除',error:'❌ 操作失败',query_result:'🔍 查询结果',follow_up:'💬 追问'};const style=typeMap[d.type]||'';card.className='message-card '+style;if(d.thinking){const t=document.createElement('div');t.className='thinking-content';t.textContent='💭 '+d.thinking;card.appendChild(t)}if(d.type==='follow_up'){card.style.borderLeft='none';card.style.background='transparent';const b=document.createElement('div');b.className='message-bubble';b.style.background='#fff';b.style.border='1px solid var(--border)';b.textContent=d.message||'请补充信息';card.appendChild(b);return card}const title=document.createElement('div');title.className='message-card-title';title.textContent=labelMap[d.type]||d.type;const body=document.createElement('div');body.className='message-card-body';if(d.type==='entry_created'||d.type==='entry_updated'){if(d.entry){const e=d.entry;body.innerHTML+='<div style="margin-top:4px"><strong>'+escapeHtml(e.entryCode||'')+'</strong> · '+escapeHtml(e.title||'')+'</div>'}}if(d.type==='query_result'&&d.results){body.innerHTML+='<div style="margin-top:8px">共找到 '+d.results.length+' 条结果</div>';d.results.forEach(r=>{const item=document.createElement('div');item.className='entry-item';item.innerHTML='<div class="entry-item-title">'+escapeHtml(r.title||'')+'</div><div class="entry-item-summary">'+escapeHtml(r.summary||'')+'</div><div class="entry-meta"><span>'+escapeHtml(r.knowledge_type||'')+'</span><span>'+escapeHtml(r.status||'')+'</span></div>';body.appendChild(item)})}if(d.type==='error'){body.textContent=d.message||'未知错误'}card.appendChild(title);card.appendChild(body);return card}
 
 /* chat input 自动扩展 */
 $('chatInput').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'});$('chatInput').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
+
+/* ============ 快捷模板填充 ============ */
+function fillTemplate(type){const tpl={fault:'录入故障案例：场景为[仓库A]，[AGV-007]在[操作]时出现[无法启动]故障。\n现象：\n排查过程：\n根因：\n解决方案：\n架构层：L1\n',sop:'录入SOP：\n标题：[作业名称]\n适用场景：\n前置条件：\n操作步骤：\n1. \n2. \n3. \n注意事项：\n架构层：L3\n',experience:'录经验规则：\n场景：[描述适用场景]\n规则描述：\n注意事项：\n架构层：L4\n'};const input=$('chatInput');input.value=tpl[type]||'';input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px';input.focus();toast('已填充模板，请完善信息后发送','info')}
+
+/* ============ 快速录入弹窗 ============ */
+function showEntryForm(){$('entryModal').classList.add('active')}
+function hideEntryForm(){$('entryModal').classList.remove('active')}
+function submitEntryForm(){const title=$('fmTitle').value.trim();const ktype=$('fmType').value;const layer=$('fmLayer').value;const scene=$('fmScene').value.trim();const severity=$('fmSeverity').value;const summary=$('fmSummary').value.trim();const content=$('fmContent').value.trim();if(!title||!layer||!summary||!content){toast('请填写所有必填字段（带*）','error');return}const msg='录入'+({fault_case:'故障案例',sop:'SOP',experience_rule:'经验规则',scene_portrait:'场景画像',tool_script:'工具脚本',ai_template:'AI模板'}[ktype]||'')+'：\n标题：'+title+'\n场景：'+(scene||'待补充')+'\n架构层：'+layer+'\n严重程度：'+severity+'\n摘要：'+summary+'\n\n详细内容：\n'+content;hideEntryForm();$('chatInput').value=msg;$('chatInput').style.height='auto';$('chatInput').style.height=Math.min($('chatInput').scrollHeight,120)+'px';switchTab('chat');sendChat();toast('已发送录入请求','info')}
+/* 点击遮罩层关闭弹窗 */
+document.getElementById('entryModal').addEventListener('click',function(e){if(e.target===this)hideEntryForm()});
 
 /* ============ 语音输入 ============ */
 var recognition=null;var isRecording=false;

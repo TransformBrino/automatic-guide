@@ -21,6 +21,7 @@ const ai = require('../services/ai');
 const promptBuilder = require('../services/prompt-builder');
 const sqlExecutor = require('../services/sql-executor');
 const { generateEntryCode } = require('../services/entry-code');
+const searchService = require('../services/search');
 const pool = require('../db/connection');
 const { sendSuccess, sendError } = require('../utils/response');
 const errors = require('../utils/errors');
@@ -34,7 +35,7 @@ router.use(authRequired);
  */
 router.post('/', async (req, res) => {
   // ---------- 步骤 1：接收请求 ----------
-  const { message, sessionId } = req.body;
+  const { message, sessionId, enableWebSearch, enableThinking } = req.body;
   if (!message || typeof message !== 'string' || message.trim() === '') {
     return sendError(res, errors.VALIDATION_ERROR, 'message 不能为空');
   }
@@ -51,22 +52,41 @@ router.post('/', async (req, res) => {
     const history = session.getHistory(sessionId);
 
     // ---------- 步骤 3：构建 Prompt ----------
-    const messages = promptBuilder.buildMessages(history, userMessage);
+    let messages = promptBuilder.buildMessages(history, userMessage);
+
+    // ---------- 步骤 3.5：联网搜索（若开启） ----------
+    let searchResults = '';
+    if (enableWebSearch) {
+      searchResults = await searchService.search(userMessage);
+      if (searchResults && !searchResults.startsWith('[联网搜索失败') && !searchResults.startsWith('[联网搜索超时')) {
+        // 将搜索结果注入到系统 prompt 中
+        const sysMsg = messages.find(m => m.role === 'system');
+        if (sysMsg) {
+          sysMsg.content += '\n\n【以下是实时联网搜索结果，请结合这些信息回答问题】\n' + searchResults;
+        }
+      }
+    }
 
     // ---------- 步骤 4：调用 AI ----------
-    const { replyText, sqlStatements } = await ai.callAI(messages);
+    const { replyText, sqlStatements, thinking } = await ai.callAI(messages, { enableWebSearch, enableThinking });
 
     // ---------- 步骤 5：分支处理 ----------
+
+    // 通用的 thinking 包装函数
+    const withThinking = (data) => {
+      if (thinking) data.thinking = thinking;
+      return data;
+    };
 
     // 分支 A：AI 追问（无 SQL）
     if (!sqlStatements || sqlStatements.length === 0) {
       session.appendMessage(sessionId, 'user', userMessage);
       session.appendMessage(sessionId, 'assistant', replyText);
-      return sendSuccess(res, {
+      return sendSuccess(res, withThinking({
         type: 'follow_up',
         message: replyText,
         sessionId,
-      });
+      }));
     }
 
     // 分支 B：AI 返回了 SQL
@@ -100,11 +120,11 @@ router.post('/', async (req, res) => {
       const errMsg = `操作失败：${result.error}`;
       session.appendMessage(sessionId, 'user', userMessage);
       session.appendMessage(sessionId, 'assistant', errMsg);
-      return sendSuccess(res, {
+      return sendSuccess(res, withThinking({
         type: 'error',
         message: errMsg,
         sessionId,
-      });
+      }));
     }
 
     // 成功：按操作类型处理副作用（audit_log / version_history）并构造响应
@@ -129,7 +149,7 @@ router.post('/', async (req, res) => {
     session.appendMessage(sessionId, 'user', userMessage);
     session.appendMessage(sessionId, 'assistant', replyText);
 
-    return sendSuccess(res, { ...responseData, sessionId });
+    return sendSuccess(res, withThinking({ ...responseData, sessionId }));
   } catch (err) {
     // AI 调用失败（超时 / HTTP 错误）
     if (err.isTimeout || err.httpStatus) {

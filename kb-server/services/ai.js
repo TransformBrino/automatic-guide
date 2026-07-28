@@ -32,14 +32,28 @@ function extractSqlStatements(text) {
 /**
  * 调用 AI API（带超时与重试）
  * @param {Array<{role:string, content:string}>} messages - OpenAI 格式 messages
+ * @param {Object} [options] - 可选参数
+ * @param {boolean} [options.enableWebSearch] - 启用联网搜索
+ * @param {boolean} [options.enableThinking] - 启用深度思考
  * @returns {Promise<{replyText:string, sqlStatements:string[]}>}
  */
-async function callAI(messages) {
+async function callAI(messages, options = {}) {
   const body = {
     model: config.ai.model,
     messages,
-    temperature: 0.3, // 较低温度保证输出稳定
+    temperature: 0.3,
   };
+
+  // 联网搜索参数（DeepSeek enable_web_search）
+  if (options.enableWebSearch || config.ai.enableWebSearch) {
+    body.enable_web_search = true;
+  }
+
+  // 深度思考参数
+  if (options.enableThinking || config.ai.enableThinking) {
+    // DeepSeek 深度思考：使用 reasoning 模型或传入 thinking 参数
+    body.enable_thinking = true;
+  }
 
   let lastError = null;
   const maxAttempts = config.ai.maxRetries + 1; // 1 次重试 = 最多 2 次尝试
@@ -91,7 +105,18 @@ async function callAIOnce(body, attempt) {
     }
 
     const data = await resp.json();
-    const replyText = data?.choices?.[0]?.message?.content || '';
+    const message = data?.choices?.[0]?.message || {};
+    let replyText = message.content || '';
+    // 提取深度思考内容（DeepSeek reasoning_content）
+    const thinkingContent = message.reasoning_content || message.thinking || '';
+    if (thinkingContent && !replyText) {
+      // 如果只有思考内容没有回复，把思考内容作为回复
+      replyText = thinkingContent;
+    } else if (thinkingContent) {
+      // 将思考内容附加到回复前（用摘要形式）
+      replyText = replyText;
+    }
+
     if (!replyText) {
       const err = new Error('AI API 返回内容为空');
       err.isTimeout = false;
@@ -99,7 +124,7 @@ async function callAIOnce(body, attempt) {
     }
 
     const sqlStatements = extractSqlStatements(replyText);
-    return { replyText, sqlStatements };
+    return { replyText, sqlStatements, thinking: thinkingContent };
   } catch (err) {
     // AbortError 视为超时
     if (err.name === 'AbortError') {
