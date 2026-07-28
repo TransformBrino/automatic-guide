@@ -117,9 +117,11 @@ function parseSQL(sql) {
  * 安全校验并执行 SQL 语句数组
  * @param {string[]} sqlStatements - AI 生成的 SQL 语句数组
  * @param {number} userId - 当前用户 ID（用于日志）
- * @returns {Promise<{success:boolean, results:any[], error?:string, parsedTypes?:string[]}>}
+ * @param {Object} [options] - 可选选项
+ * @param {boolean} [options.entryCode] - 是否在事务内生成 entry_code（替换 __ENTRY_CODE__ 占位符）
+ * @returns {Promise<{success:boolean, results:any[], error?:string, parsedTypes?:string[], entryCode?:string}>}
  */
-async function validateAndExecute(sqlStatements, userId) {
+async function validateAndExecute(sqlStatements, userId, options = {}) {
   if (!Array.isArray(sqlStatements) || sqlStatements.length === 0) {
     return { success: false, results: [], error: 'SQL 语句数组为空' };
   }
@@ -182,6 +184,38 @@ async function validateAndExecute(sqlStatements, userId) {
     conn = await pool.getConnection();
     await conn.beginTransaction();
 
+    // === 事务内生成 entry_code（原子递增，并发安全）===
+    let generatedEntryCode = null;
+    if (options.entryCode) {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}${mm}${dd}`;
+
+      // 原子递增：INSERT ... ON DUPLICATE KEY UPDATE 是 MySQL 原子操作
+      // 即使并发请求同时执行，也不会产生相同序号
+      await conn.execute(
+        'INSERT INTO kb_code_sequence (date_key, seq) VALUES (?, 1) ON DUPLICATE KEY UPDATE seq = seq + 1',
+        [dateStr]
+      );
+      const [seqRows] = await conn.execute(
+        'SELECT seq FROM kb_code_sequence WHERE date_key = ?',
+        [dateStr]
+      );
+      const seq = String(seqRows[0].seq).padStart(3, '0');
+      generatedEntryCode = `KB-${dateStr}-${seq}`;
+
+      // 替换 SQL 中的 __ENTRY_CODE__ 占位符
+      for (let i = 0; i < sqlStatements.length; i++) {
+        if (sqlStatements[i].includes('__ENTRY_CODE__')) {
+          // 转义单引号防止 SQL 注入（占位符替换时）
+          const escaped = generatedEntryCode.replace(/'/g, "''");
+          sqlStatements[i] = sqlStatements[i].replace(/__ENTRY_CODE__/g, escaped);
+        }
+      }
+    }
+
     const results = [];
     const parsedTypes = [];
     for (const { sql, ast } of parsedList) {
@@ -192,7 +226,7 @@ async function validateAndExecute(sqlStatements, userId) {
     }
 
     await conn.commit();
-    return { success: true, results, parsedTypes };
+    return { success: true, results, parsedTypes, entryCode: generatedEntryCode };
   } catch (err) {
     if (conn) {
       try {

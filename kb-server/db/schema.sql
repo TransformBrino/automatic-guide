@@ -114,3 +114,13 @@ CREATE TABLE kb_users (
   is_active   TINYINT(1) DEFAULT 1,
   created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
+-- ------------------------------------------------------------
+-- 表 6：kb_code_sequence（编码序列表，用于并发安全的 entry_code 生成）
+-- date_key: 日期键 YYYYMMDD
+-- seq: 当日已使用的最大序号（原子递增，由 ON DUPLICATE KEY UPDATE 保证）
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kb_code_sequence (
+  date_key VARCHAR(8) PRIMARY KEY,
+  seq      INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='编码序列表';

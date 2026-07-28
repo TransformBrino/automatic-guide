@@ -20,7 +20,6 @@ const session = require('../services/session');
 const ai = require('../services/ai');
 const promptBuilder = require('../services/prompt-builder');
 const sqlExecutor = require('../services/sql-executor');
-const { generateEntryCode } = require('../services/entry-code');
 const searchService = require('../services/search');
 const pool = require('../db/connection');
 const config = require('../config');
@@ -98,12 +97,10 @@ router.post('/', async (req, res) => {
       sql.replace(/__CREATED_BY__/g, escapeSqlString(user.username))
     );
 
-    // 对 INSERT：生成 entry_code 并替换/注入
-    // AI 应按 prompt 要求使用 __ENTRY_CODE__ 占位符；若未使用则自动注入字段
+    // 对 INSERT：注入 __ENTRY_CODE__ 占位符，实际编码在 sql-executor 事务内原子生成
     if (primaryType === 'insert') {
-      const entryCode = await generateEntryCodeForInsert();
       processedSqls = processedSqls.map((sql) =>
-        injectEntryCode(sql, entryCode, user.username)
+        injectEntryCode(sql, '__ENTRY_CODE__', user.username)
       );
     }
 
@@ -114,7 +111,9 @@ router.post('/', async (req, res) => {
     }
 
     // 调用 SQL 安全执行器（5 层校验 + 事务执行）
-    const result = await sqlExecutor.validateAndExecute(processedSqls, user.id);
+    const result = await sqlExecutor.validateAndExecute(processedSqls, user.id, {
+      entryCode: primaryType === 'insert'
+    });
 
     if (!result.success) {
       // SQL 校验或执行失败
@@ -191,21 +190,6 @@ function detectPrimaryType(sqlStatements) {
     }
   }
   return 'select';
-}
-
-/**
- * 为 INSERT 生成 entry_code
- * 从连接池获取临时连接调用生成器，生成后释放
- * @returns {Promise<string>} KB-YYYYMMDD-NNN
- */
-async function generateEntryCodeForInsert() {
-  let conn;
-  try {
-    conn = await pool.getConnection();
-    return await generateEntryCode(conn);
-  } finally {
-    if (conn) conn.release();
-  }
 }
 
 /**
@@ -475,18 +459,18 @@ async function autoContinueInsert(messages, user, clientIp) {
     return null;
   }
 
-  // 替换占位符 + 注入 entry_code
+  // 替换占位符 + 注入 __ENTRY_CODE__ 占位符（编码在 sql-executor 事务内生成）
   let processedSqls = secondSql.map((sql) =>
     sql.replace(/__CREATED_BY__/g, escapeSqlString(user.username))
   );
-
-  const entryCode = await generateEntryCodeForInsert();
   processedSqls = processedSqls.map((sql) =>
-    injectEntryCode(sql, entryCode, user.username)
+    injectEntryCode(sql, '__ENTRY_CODE__', user.username)
   );
 
-  // 安全执行
-  const result = await sqlExecutor.validateAndExecute(processedSqls, user.id);
+  // 安全执行（entryCode: true 表示在事务内原子生成 entry_code）
+  const result = await sqlExecutor.validateAndExecute(processedSqls, user.id, {
+    entryCode: true
+  });
   if (!result.success) {
     console.error('[chat] 自动录入 SQL 执行失败:', result.error);
     return null;
