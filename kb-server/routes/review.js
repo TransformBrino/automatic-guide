@@ -50,7 +50,8 @@ router.get('/pending', requireRole('reviewer', 'admin'), async (req, res) => {
     );
     const total = countRows[0].total;
 
-    // 分页查询（limit/offset 已校验为整数，直接拼入 SQL）
+    // 分页查询
+    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
     const [rows] = await pool.execute(
       `SELECT id, entry_code, title, knowledge_type, scene, summary, full_content, architecture_layer, created_by, updated_at
        FROM kb_entries ${whereClause}

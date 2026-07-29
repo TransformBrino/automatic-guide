@@ -1,9 +1,11 @@
 /**
  * middleware/auth.js — JWT 认证中间件
  * 职责：
- * 1. authRequired：解析 Authorization: Bearer <token>，验证 JWT，
- *    将 {id, username, role} 挂载到 req.user；无效返回 401。
+ * 1. authRequired：解析 Authorization: Bearer <token> 或 Cookie token，
+ *    验证 JWT，将 {id, username, role} 挂载到 req.user；无效返回 401。
  * 2. requireRole(...roles)：角色校验，不在允许列表返回 403。
+ *
+ * P9-T22：支持从 httpOnly Cookie 中提取 token（优先检测 Authorization Header）
  */
 
 const jwt = require('jsonwebtoken');
@@ -13,16 +15,29 @@ const { sendError } = require('../utils/response');
 const errors = require('../utils/errors');
 
 /**
+ * 从请求中提取 JWT token
+ * P9-T22：优先 Authorization Header → 其次 httpOnly Cookie → 都不存在返回 null
+ */
+function extractToken(req) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice('Bearer '.length).trim();
+  }
+  if (req.cookies && req.cookies.token) {
+    return req.cookies.token;
+  }
+  return null;
+}
+
+/**
  * JWT 认证中间件（必须登录）
  * 验证 token 后额外检查用户 is_active 状态，确保被禁用的用户 token 立即失效
  */
 async function authRequired(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = extractToken(req);
+  if (!token) {
     return sendError(res, errors.AUTH_REQUIRED);
   }
-
-  const token = authHeader.slice('Bearer '.length).trim();
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
     // 确保 token 中含必要字段

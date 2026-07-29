@@ -644,8 +644,8 @@ mark.highlight{background:#fbbc04;color:#202124;padding:0 2px;border-radius:2px}
 <script>
 /* ============ 全局状态 ============ */
 const state = {
-  token: localStorage.getItem('kb_token') || '',
-  user: JSON.parse(localStorage.getItem('kb_user') || 'null'),
+  token: '', // 非持久化，登录后从响应体获取（httpOnly cookie 负责持久化）
+  user: JSON.parse(sessionStorage.getItem('kb_user') || 'null'), // P9-T22：sessionStorage 持久化用户信息
   currentTab: 'chat',
   sessionId: crypto.randomUUID ? crypto.randomUUID() : 's-' + Date.now() + '-' + Math.random().toString(36).slice(2),
   messages: [],
@@ -666,7 +666,7 @@ const state = {
 /* ============ 工具函数 ============ */
 function $(id){return document.getElementById(id)}
 function toast(msg,type='info'){const t=$('toast');t.textContent=msg;t.className='toast show '+type;setTimeout(()=>t.classList.remove('show'),2500)}
-function api(path,options={}){const headers={'Content-Type':'application/json'};if(state.token)headers['Authorization']='Bearer '+state.token;return fetch('/api'+path,{...options,headers:options.headers||headers}).then(r=>r.json())}
+function api(path,options={}){const headers={'Content-Type':'application/json'}; if(state.token&&state.token!=='cookie')headers['Authorization']='Bearer '+state.token; return fetch('/api'+path,{...options,headers:options.headers||headers,credentials:'same-origin'}).then(r=>r.json())}
 function escapeHtml(str){const div=document.createElement('div');div.textContent=str;return div.innerHTML}
 
 /* ============ 登录/登出 ============ */
@@ -674,8 +674,8 @@ function showLogin(){ $('loginPage').style.display='flex'; $('app').classList.re
 function showApp(){ $('loginPage').style.display='none'; $('app').classList.add('show'); }
 function updateUserUI(){ if(!state.user)return; $('userName').textContent=state.user.displayName||state.user.username; $('userRole').textContent=roleText(state.user.role); $('userAvatar').textContent=(state.user.displayName||state.user.username).charAt(0).toUpperCase(); $('settingsName').textContent=state.user.displayName||state.user.username; $('settingsUsername').textContent='@'+state.user.username; const rb=$('settingsRole');rb.textContent=roleText(state.user.role);rb.className='role-badge '+state.user.role.toLowerCase(); const showReview=state.user.role==='reviewer'||state.user.role==='admin'; const showAdmin=state.user.role==='admin'; document.querySelector('[data-tab="review"]').classList.toggle('hidden',!showReview); document.querySelector('[data-tab="stats"]').classList.toggle('hidden',!showAdmin); document.querySelector('[data-tab="admin"]').classList.toggle('hidden',!showAdmin); }
 function roleText(r){return{admin:'管理员',reviewer:'审核员',contributor:'贡献者'}[r]||r}
-async function handleLogin(){ const username=$('loginUsername').value.trim();const password=$('loginPassword').value; const err=$('loginError');err.classList.remove('show'); if(!username||!password){err.textContent='请输入用户名和密码';err.classList.add('show');return} const btn=$('loginBtn');btn.disabled=true;btn.textContent='登录中...'; try{const resp=await api('/auth/login',{method:'POST',body:JSON.stringify({username,password})}); if(resp.success){state.token=resp.data.token;state.user=resp.data.user;localStorage.setItem('kb_token',state.token);localStorage.setItem('kb_user',JSON.stringify(state.user));updateUserUI();showApp();switchTab('chat');startTokenCheck();toast('登录成功','success')}else{err.textContent=resp.error||'登录失败';err.classList.add('show')}}catch(e){err.textContent='网络错误，请重试';err.classList.add('show')}finally{btn.disabled=false;btn.textContent='登录'}}
-function handleLogout(){localStorage.removeItem('kb_token');localStorage.removeItem('kb_user');sessionStorage.removeItem('kb_sessionId');state.token='';state.user=null;state.messages=[];if(state._tokenTimer){clearInterval(state._tokenTimer);state._tokenTimer=null}showLogin();$('loginUsername').value='';$('loginPassword').value='';toast('已退出登录','info')}
+async function handleLogin(){ const username=$('loginUsername').value.trim();const password=$('loginPassword').value; const err=$('loginError');err.classList.remove('show'); if(!username||!password){err.textContent='请输入用户名和密码';err.classList.add('show');return} const btn=$('loginBtn');btn.disabled=true;btn.textContent='登录中...'; try{const resp=await api('/auth/login',{method:'POST',body:JSON.stringify({username,password})}); if(resp.success){state.token=resp.data.token;state.user=resp.data.user; sessionStorage.setItem('kb_user',JSON.stringify(state.user)); updateUserUI();showApp();switchTab('chat');startTokenCheck();toast('登录成功','success')}else{err.textContent=resp.error||'登录失败';err.classList.add('show')}}catch(e){err.textContent='网络错误，请重试';err.classList.add('show')}finally{btn.disabled=false;btn.textContent='登录'}}
+async function handleLogout(){ try{await api('/auth/logout',{method:'POST'})}catch(e){} sessionStorage.removeItem('kb_user');sessionStorage.removeItem('kb_sessionId');state.token='';state.user=null;state.messages=[];if(state._tokenTimer){clearInterval(state._tokenTimer);state._tokenTimer=null}showLogin();$('loginUsername').value='';$('loginPassword').value='';toast('已退出登录','info')}
 function checkTokenExpiry(){if(!state.token)return;try{const p=JSON.parse(atob(state.token.split('.')[1]));if(!p||!p.exp)return;const left=(p.exp*1000-Date.now())/60000;if(left<=0){toast('登录已过期，请重新登录','error');setTimeout(handleLogout,2000)}else if(left<10){toast('登录将在 '+Math.round(left)+' 分钟后过期，请及时保存内容','warning')}else if(left<30){toast('登录将在约 '+Math.round(left)+' 分钟后过期','warning')}}catch(e){}}function startTokenCheck(){checkTokenExpiry();if(state._tokenTimer)clearInterval(state._tokenTimer);state._tokenTimer=setInterval(checkTokenExpiry,120000)}
 
 /* ============ Tab 切换 ============ */
@@ -809,7 +809,29 @@ function changeLogPage(p){logPage=p;loadAuditLogs()}
 // P9-T25：全局异常捕获（JS 运行时错误 + Promise rejection）
 window.onerror=function(msg,src,line,col,err){console.error('[全局错误]',msg,'at',src,line+':'+col,err);toast('页面发生错误: '+(msg||'未知错误'),'error');return!1};
 window.addEventListener('unhandledrejection',function(e){console.error('[未处理Promise拒绝]',e.reason);toast('操作失败，请重试','error')});
-function init(){ if(state.token&&state.user){updateUserUI();showApp();const savedSid=sessionStorage.getItem('kb_sessionId');if(savedSid){state.sessionId=savedSid}else{state.sessionId=crypto.randomUUID?crypto.randomUUID():'s-'+Date.now()+'-'+Math.random().toString(36).slice(2);sessionStorage.setItem('kb_sessionId',state.sessionId)}switchTab('chat');startTokenCheck()}else{showLogin()} }
+async function init(){
+  // P9-T22：优先通过 httpOnly cookie 恢复登录状态（页面刷新/新标签页）
+  if (state.user) {
+    // sessionStorage 中已有用户信息，验证 cookie 是否仍然有效
+    try {
+      const resp = await api('/auth/me');
+      if (resp.success) {
+        state.token = 'cookie'; // 标记已认证（实际 token 在 cookie 中）
+        state.user = resp.data.user;
+        sessionStorage.setItem('kb_user', JSON.stringify(state.user));
+        updateUserUI(); showApp();
+        const savedSid = sessionStorage.getItem('kb_sessionId');
+        if (savedSid) { state.sessionId = savedSid; }
+        else { state.sessionId = crypto.randomUUID ? crypto.randomUUID() : 's-' + Date.now() + '-' + Math.random().toString(36).slice(2); sessionStorage.setItem('kb_sessionId', state.sessionId); }
+        switchTab('chat'); startTokenCheck(); return;
+      }
+    } catch(e) {}
+    // Cookie 无效，清除残留
+    sessionStorage.removeItem('kb_user');
+    state.user = null;
+  }
+  showLogin();
+}
 init();
 </script>
 </body>

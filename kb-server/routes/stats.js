@@ -13,11 +13,23 @@ const { authRequired } = require('../middleware/auth');
 
 router.use(authRequired);
 
+// P9-T14：内存缓存，避免每次请求 4 条 SQL 聚合查询
+const CACHE_TTL_MS = 60000; // 60 秒
+let statsCache = { data: null, timestamp: 0 };
+
 // ============================================================
-// GET /api/stats — 统计数据（无需鉴权除外的特殊处理，已挂 authRequired）
+// GET /api/stats — 统计数据
+// ?refresh=1 强制刷新缓存
 // ============================================================
 router.get('/', async (req, res) => {
   try {
+    // P9-T14：检查缓存（允许 ?refresh=1 强制刷新）
+    const forceRefresh = req.query.refresh === '1';
+    const now = Date.now();
+    if (!forceRefresh && statsCache.data && (now - statsCache.timestamp) < CACHE_TTL_MS) {
+      return sendSuccess(res, { ...statsCache.data, _cached: true });
+    }
+
     // 1. 总数
     const [totalRow] = await pool.execute(
       'SELECT COUNT(*) AS total FROM kb_entries WHERE status != "archived"'
@@ -73,12 +85,12 @@ router.get('/', async (req, res) => {
       if (byStatus[s] === undefined) byStatus[s] = 0;
     }
 
-    return sendSuccess(res, {
-      totalEntries,
-      byType,
-      byScene,
-      byStatus,
-    });
+    const result = { totalEntries, byType, byScene, byStatus };
+
+    // P9-T14：更新缓存
+    statsCache = { data: result, timestamp: now };
+
+    return sendSuccess(res, result);
   } catch (err) {
     console.error('[stats] 统计查询失败:', err);
     return sendError(res, errors.DB_ERROR, safeErrorMsg('统计查询失败', err));

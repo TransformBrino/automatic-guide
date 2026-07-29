@@ -88,7 +88,8 @@ router.get('/', async (req, res) => {
     const [countRows] = await pool.execute(countSql, params);
     const total = countRows[0].total;
 
-    // 查询分页数据（limit/offset 已校验为整数，直接拼入 SQL）
+    // 查询分页数据
+    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
     const listSql = `
       SELECT id, entry_code, title, knowledge_type, architecture_layer, scene,
              severity, summary, status, score_total, version_label,
@@ -253,6 +254,7 @@ router.get('/:id/history', async (req, res) => {
     const total = countRows[0].total;
 
     // 分页查询（不含 full_content_snapshot 大字段）
+    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
     const [rows] = await pool.execute(
       `SELECT id, version_label, change_summary, changed_by, created_at
        FROM kb_version_history

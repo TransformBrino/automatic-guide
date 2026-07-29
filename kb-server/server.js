@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 const config = require('./config');
 const pool = require('./db/connection');
 const { sendError } = require('./utils/response');
@@ -63,6 +64,7 @@ if (process.env.NODE_ENV === 'production') {
 
 app.use(express.json({ limit: '1mb' })); // 解析 JSON 请求体
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); // P9-T22：JWT httpOnly Cookie 支持
 
 // CORS（内网部署，允许所有来源；生产可按域名白名单收紧）
 app.use((req, res, next) => {

@@ -252,7 +252,7 @@ console.log('\n=== P5-T3: admin 管理路由 ===');
   const testUsername = `test_user_${Date.now()}`;
   const { status, data } = await req('POST', '/admin/users', {
     username: testUsername,
-    password: 'testpass123',
+    password: 'TestPass123',
     displayName: '测试用户',
     role: 'contributor',
   }, adminToken);
@@ -265,7 +265,7 @@ console.log('\n=== P5-T3: admin 管理路由 ===');
     // 验证可以用新用户登录
     const loginResp = await req('POST', '/auth/login', {
       username: testUsername,
-      password: 'testpass123',
+      password: 'TestPass123',
     });
     assert('新用户可登录', loginResp.status === 200 && loginResp.data.success, '');
   }
@@ -273,7 +273,7 @@ console.log('\n=== P5-T3: admin 管理路由 ===');
   // 重复用户名 → 400
   const dupResp = await req('POST', '/admin/users', {
     username: testUsername,
-    password: 'testpass123',
+    password: 'TestPass123',
     displayName: '重复用户',
     role: 'contributor',
   }, adminToken);
@@ -381,7 +381,7 @@ console.log('\n=== 权限测试 ===');
   const permUsername = `perm_test_${Date.now()}`;
   const createResp = await req('POST', '/admin/users', {
     username: permUsername,
-    password: 'testpass123',
+    password: 'TestPass123',
     displayName: '权限测试用户',
     role: 'contributor',
   }, adminToken);
@@ -390,7 +390,7 @@ console.log('\n=== 权限测试 ===');
     // 用 contributor 登录
     const loginResp = await req('POST', '/auth/login', {
       username: permUsername,
-      password: 'testpass123',
+      password: 'TestPass123',
     });
     if (loginResp.data.success) {
       const contribToken = loginResp.data.data.token;

@@ -15,6 +15,7 @@ const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
 const { loginLimiter } = require('../middleware/rate-limiter');
+const { validatePassword } = require('../utils/password'); // P9-T16
 
 /**
  * POST /api/auth/login
@@ -89,6 +90,15 @@ router.post('/login', loginLimiter, async (req, res, next) => { // P9-T1：登�
       { expiresIn: config.jwt.expiresIn }
     );
 
+    // P9-T22：以 httpOnly cookie 方式设置 JWT，防止 XSS 窃取
+    // 同时保留 body 中的 token 字段（向后兼容）
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 8 * 60 * 60 * 1000, // 8 小时
+    });
+
     return sendSuccess(res, {
       token,
       user: {
@@ -115,8 +125,10 @@ router.post('/change-password', authRequired, async (req, res, next) => {
     if (!oldPassword || !newPassword) {
       return sendError(res, errors.VALIDATION_ERROR, '旧密码和新密码不能为空');
     }
-    if (newPassword.length < 6) {
-      return sendError(res, errors.VALIDATION_ERROR, '新密码长度至少 6 位');
+    // P9-T16：密码复杂度校验（至少 8 位 + 大小写 + 数字）
+    const pwCheck = validatePassword(newPassword);
+    if (!pwCheck.valid) {
+      return sendError(res, errors.VALIDATION_ERROR, pwCheck.message);
     }
 
     const [rows] = await pool.execute(
@@ -141,6 +153,46 @@ router.post('/change-password', authRequired, async (req, res, next) => {
     return sendSuccess(res, {}, '密码修改成功');
   } catch (err) {
     return sendError(res, errors.DB_ERROR, safeErrorMsg('密码修改失败', err));
+  }
+});
+
+/**
+ * POST /api/auth/logout
+ * P9-T22：清除 httpOnly cookie，实现安全退出
+ */
+router.post('/logout', (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
+  return sendSuccess(res, {}, '已退出登录');
+});
+
+/**
+ * GET /api/auth/me
+ * P9-T22：通过 cookie 中的 JWT 返回当前登录用户信息（用于页面刷新恢复登录状态）
+ */
+router.get('/me', authRequired, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT id, username, display_name, role FROM kb_users WHERE id = ? AND is_active = 1 LIMIT 1',
+      [req.user.id]
+    );
+    if (rows.length === 0) {
+      return sendError(res, errors.AUTH_REQUIRED, '用户不存在或已禁用');
+    }
+    const user = rows[0];
+    return sendSuccess(res, {
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.display_name,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('获取用户信息失败', err));
   }
 });
 

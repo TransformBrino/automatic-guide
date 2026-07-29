@@ -11,6 +11,7 @@ const pool = require('../db/connection');
 const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired, requireRole } = require('../middleware/auth');
+const { validatePassword } = require('../utils/password'); // P9-T16
 
 router.use(authRequired, requireRole('admin'));
 
@@ -167,6 +168,7 @@ router.get('/users', async (req, res) => {
     );
     const total = countRows[0].total;
 
+    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
     const [rows] = await pool.execute(
       `SELECT id, username, display_name, role, is_active, created_at
        FROM kb_users
@@ -205,8 +207,13 @@ router.post('/users', async (req, res) => {
     if (!username || typeof username !== 'string' || username.trim() === '') {
       return sendError(res, errors.VALIDATION_ERROR, '用户名不能为空');
     }
-    if (!password || typeof password !== 'string' || password.length < 6) {
-      return sendError(res, errors.VALIDATION_ERROR, '密码长度至少 6 位');
+    // P9-T16：密码复杂度校验（至少 8 位 + 大小写 + 数字）
+    if (!password || typeof password !== 'string') {
+      return sendError(res, errors.VALIDATION_ERROR, '密码不能为空');
+    }
+    const pwCheck = validatePassword(password);
+    if (!pwCheck.valid) {
+      return sendError(res, errors.VALIDATION_ERROR, pwCheck.message);
     }
     if (!displayName || typeof displayName !== 'string') {
       return sendError(res, errors.VALIDATION_ERROR, '显示名不能为空');
@@ -257,6 +264,69 @@ router.post('/users', async (req, res) => {
 });
 
 // ============================================================
+// GET /api/admin/entries/export — 导出 CSV
+// P9-T18：支持按知识类型/场景/状态筛选导出，UTF-8 BOM 兼容 Excel
+// ============================================================
+router.get('/entries/export', async (req, res) => {
+  try {
+    const { knowledge_type, scene, status } = req.query;
+
+    const conditions = [];
+    const params = [];
+
+    if (knowledge_type) {
+      conditions.push('knowledge_type = ?');
+      params.push(knowledge_type);
+    }
+    if (scene) {
+      conditions.push('scene = ?');
+      params.push(scene);
+    }
+    if (status) {
+      conditions.push('status = ?');
+      params.push(status);
+    }
+
+    const whereClause = conditions.length > 0
+      ? 'WHERE ' + conditions.join(' AND ')
+      : '';
+
+    const [rows] = await pool.execute(
+      `SELECT entry_code, title, knowledge_type, scene, status, score_total, created_by, created_at
+       FROM kb_entries ${whereClause}
+       ORDER BY created_at DESC`,
+      params
+    );
+
+    // 构建 CSV（UTF-8 BOM 确保 Excel 正确识别中文）
+    const headers = ['编号', '标题', '知识类型', '场景', '状态', '评分', '创建者', '创建时间'];
+    const csvLines = [headers.join(',')];
+    for (const row of rows) {
+      csvLines.push([
+        `"${(row.entry_code || '').replace(/"/g, '""')}"`,
+        `"${(row.title || '').replace(/"/g, '""')}"`,
+        `"${(row.knowledge_type || '')}"`,
+        `"${(row.scene || '')}"`,
+        `"${(row.status || '')}"`,
+        row.score_total ?? '',
+        `"${(row.created_by || '')}"`,
+        `"${row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : ''}"`,
+      ].join(','));
+    }
+
+    const bom = '\uFEFF';
+    const csvContent = bom + csvLines.join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="kb-export-${new Date().toISOString().slice(0,10)}.csv"`);
+    return res.send(csvContent);
+  } catch (err) {
+    console.error('[admin] CSV 导出失败:', err);
+    return sendError(res, errors.DB_ERROR, safeErrorMsg('CSV 导出失败', err));
+  }
+});
+
+// ============================================================
 // GET /api/admin/audit-logs — 操作日志列表
 // ============================================================
 router.get('/audit-logs', async (req, res) => {
@@ -293,6 +363,7 @@ router.get('/audit-logs', async (req, res) => {
     );
     const total = countRows[0].total;
 
+    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
     const [rows] = await pool.execute(
       `SELECT log.id, log.entry_id, log.action, log.operator, log.detail, log.ip_address, log.created_at,
               e.title AS entry_title, e.entry_code
