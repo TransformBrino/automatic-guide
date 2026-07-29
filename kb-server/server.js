@@ -16,6 +16,7 @@ const { sendError } = require('./utils/response');
 const errors = require('./utils/errors');
 
 const { authRequired } = require('./middleware/auth');
+const { logger } = require('./services/logger'); // P9-T11
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
 const entriesRoutes = require('./routes/entries');
@@ -161,7 +162,7 @@ app.get('*', (req, res) => {
 // ---------- 全局错误处理 ----------
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error('[UNHANDLED ERROR]', err);
+  logger.error('未被捕获的异常', { error: err.message, stack: err.stack });
   if (err.type === 'entity.parse.failed') {
     return sendError(res, errors.VALIDATION_ERROR, '请求体 JSON 格式错误');
   }
@@ -174,9 +175,9 @@ app.use((err, req, res, next) => {
 
 // ---------- 启动服务 ----------
 const server = app.listen(config.port, () => {
-  console.log(`[kb-server] 服务已启动，监听端口 ${config.port}`);
-  console.log(`[kb-server] 前端访问: http://localhost:${config.port}`);
-  console.log(`[kb-server] 健康检查: http://localhost:${config.port}/api/health`);
+  logger.info(`服务已启动，监听端口 ${config.port}`);
+  logger.info(`前端访问: http://localhost:${config.port}`);
+  logger.info(`健康检查: http://localhost:${config.port}/api/health`);
 });
 
 // ---------- 优雅关闭（P9-T15：Graceful Shutdown） ----------
@@ -185,16 +186,16 @@ let shuttingDown = false;
 function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`\n[kb-server] 收到 ${signal} 信号，开始优雅关闭...`);
+  logger.info(`收到 ${signal} 信号，开始优雅关闭...`);
 
   // 1. 停止接收新请求
   server.close(() => {
-    console.log('[kb-server] HTTP 服务已关闭');
+    logger.info('HTTP 服务已关闭');
   });
 
   // 2. 设置强制退出超时（10 秒后仍未完成则强制退出）
   const forceExit = setTimeout(() => {
-    console.error('[kb-server] 优雅关闭超时，强制退出');
+    logger.error('优雅关闭超时，强制退出');
     process.exit(1);
   }, 10000);
   forceExit.unref();
@@ -202,12 +203,12 @@ function gracefulShutdown(signal) {
   // 3. 释放数据库连接池
   pool.end()
     .then(() => {
-      console.log('[kb-server] 数据库连接池已释放');
+      logger.info('数据库连接池已释放');
       clearTimeout(forceExit);
       process.exit(0);
     })
     .catch((err) => {
-      console.error('[kb-server] 关闭连接池失败:', err.message);
+      logger.error('关闭连接池失败', { error: err.message });
       clearTimeout(forceExit);
       process.exit(1);
     });

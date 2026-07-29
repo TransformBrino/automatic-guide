@@ -11,6 +11,9 @@ const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
 const { validatePagination } = require('../utils/pagination'); // P9-T31
+const { createModuleLogger } = require('../services/logger');
+
+const logger = createModuleLogger('entries');
 
 router.use(authRequired);
 
@@ -140,7 +143,7 @@ router.get('/', async (req, res) => {
       limit: limitNum,
     });
   } catch (err) {
-    console.error('[entries] 列表查询失败:', err);
+    logger.error('列表查询失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('查询知识条目失败', err));
   }
 });
@@ -234,7 +237,7 @@ router.get('/:id', async (req, res) => {
 
     return sendSuccess(res, { entry, tags, versions });
   } catch (err) {
-    console.error('[entries] 详情查询失败:', err);
+    logger.error('详情查询失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('查询条目详情失败', err));
   }
 });
@@ -291,7 +294,7 @@ router.get('/:id/history', async (req, res) => {
 
     return sendSuccess(res, { entryId: id, history, total, page: pageNum, limit: limitNum });
   } catch (err) {
-    console.error('[entries] 历史查询失败:', err);
+    logger.error('历史查询失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('查询版本历史失败', err));
   }
 });
@@ -331,7 +334,7 @@ router.get('/:id/history/:versionId', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[entries] 版本详情查询失败:', err);
+    logger.error('版本详情查询失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('查询版本详情失败', err));
   }
 });
@@ -381,7 +384,7 @@ router.get('/:id/related', async (req, res) => {
 
     return sendSuccess(res, { related });
   } catch (err) {
-    console.error('[entries] 相关推荐查询失败:', err);
+    logger.error('相关推荐查询失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('查询相关条目失败', err));
   }
 });

@@ -10,6 +10,9 @@ const pool = require('../db/connection');
 const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
+const { createModuleLogger } = require('../services/logger');
+
+const logger = createModuleLogger('stats');
 
 router.use(authRequired);
 
@@ -92,7 +95,7 @@ router.get('/', async (req, res) => {
 
     return sendSuccess(res, result);
   } catch (err) {
-    console.error('[stats] 统计查询失败:', err);
+    logger.error('统计查询失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('统计查询失败', err));
   }
 });

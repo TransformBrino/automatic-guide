@@ -6,6 +6,9 @@
  */
 
 const config = require('../config');
+const { createModuleLogger } = require('./logger'); // P9-T11
+
+const logger = createModuleLogger('ai');
 
 // SQL 代码块匹配模式（不含 g 标志，每次调用时创建新正则避免 lastIndex 残留）
 const SQL_BLOCK_PATTERN = '```sql\\s*([\\s\\S]*?)```';
@@ -30,6 +33,63 @@ function extractSqlStatements(text) {
 }
 
 /**
+ * 三态熔断器（P9-T19：AI 调用熔断保护）
+ * - Closed → 正常调用，记录失败次数
+ * - Open → 连续 5 次失败后打开，直接拒绝请求
+ * - HalfOpen → 30 秒后试探 1 次，成功恢复 / 失败重新打开
+ */
+class CircuitBreaker {
+  constructor(options = {}) {
+    this.failureThreshold = options.failureThreshold || 5;
+    this.timeoutMs = options.timeoutMs || 30000;
+    this.failureCount = 0;
+    this.lastFailureTime = 0;
+    this.state = 'closed'; // closed | open | half-open
+  }
+
+  get isOpen() {
+    if (this.state === 'closed') return false;
+    if (this.state === 'open') {
+      if (Date.now() - this.lastFailureTime >= this.timeoutMs) {
+        this.state = 'half-open';
+        logger.info('熔断器进入半开状态，允许试探请求');
+        return false;
+      }
+      return true;
+    }
+    // half-open: 允许通过 1 次试探
+    return false;
+  }
+
+  recordSuccess() {
+    if (this.state === 'half-open') {
+      logger.info('试探请求成功，熔断器关闭');
+    }
+    this.failureCount = 0;
+    this.state = 'closed';
+  }
+
+  recordFailure() {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    if (this.failureCount >= this.failureThreshold) {
+      if (this.state !== 'open') {
+        logger.warn('熔断器打开', { failureCount: this.failureCount, state: this.state });
+      }
+      this.state = 'open';
+    }
+  }
+
+  reset() {
+    this.failureCount = 0;
+    this.state = 'closed';
+    this.lastFailureTime = 0;
+  }
+}
+
+const circuitBreaker = new CircuitBreaker();
+
+/**
  * 调用 AI API（带超时与重试）
  * @param {Array<{role:string, content:string}>} messages - OpenAI 格式 messages
  * @param {Object} [options] - 可选参数
@@ -38,6 +98,13 @@ function extractSqlStatements(text) {
  * @returns {Promise<{replyText:string, sqlStatements:string[]}>}
  */
 async function callAI(messages, options = {}) {
+  // P9-T19：熔断器检查
+  if (circuitBreaker.isOpen) {
+    const err = new Error('AI 服务暂时不可用（已熔断），请稍后再试');
+    err.isCircuitOpen = true;
+    throw err;
+  }
+
   const body = {
     model: config.ai.model,
     messages,
@@ -60,6 +127,8 @@ async function callAI(messages, options = {}) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const result = await callAIOnce(body, attempt);
+      // P9-T19：成功则重置熔断器
+      circuitBreaker.recordSuccess();
       return result;
     } catch (err) {
       lastError = err;
@@ -70,6 +139,8 @@ async function callAI(messages, options = {}) {
         await sleep(1000);
         continue;
       }
+      // P9-T19：失败记录到熔断器
+      circuitBreaker.recordFailure();
       throw err;
     }
   }
@@ -138,10 +209,138 @@ async function callAIOnce(body, attempt) {
 }
 
 /**
+ * 流式调用 AI API（P9-T7：SSE 逐 token 输出）
+ * @param {Array<{role:string, content:string}>} messages
+ * @param {Object} [options]
+ * @param {boolean} [options.enableWebSearch]
+ * @param {boolean} [options.enableThinking]
+ * @returns {AsyncGenerator<{content:string, thinking:string, done:boolean}>}
+ */
+async function* callAIStream(messages, options = {}) {
+  // P9-T19：熔断器检查
+  if (circuitBreaker.isOpen) {
+    const err = new Error('AI 服务暂时不可用（已熔断），请稍后再试');
+    err.isCircuitOpen = true;
+    throw err;
+  }
+
+  const body = {
+    model: config.ai.model,
+    messages,
+    temperature: 0.3,
+    stream: true,
+  };
+
+  if (options.enableWebSearch && config.ai.enableWebSearch) {
+    body.enable_web_search = true;
+  }
+  if (options.enableThinking && config.ai.enableThinking) {
+    body.enable_thinking = true;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.ai.timeoutMs);
+
+  try {
+    const resp = await fetch(config.ai.apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.ai.apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      const err = new Error(`AI API 返回 HTTP ${resp.status}: ${errText.slice(0, 200)}`);
+      err.httpStatus = resp.status;
+      err.isTimeout = false;
+      throw err;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let hasYielded = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // 按行解析 SSE 数据
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // 最后一个不完整行留在 buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+        const jsonStr = trimmed.slice(6); // 去掉 "data: "
+        if (jsonStr === '[DONE]') {
+          // P9-T19：流正常结束，标记成功
+          circuitBreaker.recordSuccess();
+          yield { content: '', thinking: '', done: true };
+          return;
+        }
+
+        try {
+          const data = JSON.parse(jsonStr);
+          const delta = data?.choices?.[0]?.delta || {};
+          const content = delta.content || '';
+          const thinking = delta.reasoning_content || delta.thinking || '';
+
+          if (content || thinking) {
+            // P9-T19：首次收到 token，标记 API 正常工作
+            if (!hasYielded) {
+              circuitBreaker.recordSuccess();
+              hasYielded = true;
+            }
+            yield { content, thinking, done: false };
+          }
+        } catch (_) {
+          // 忽略解析失败的行
+        }
+      }
+    }
+
+    // 处理剩余 buffer
+    if (buffer.trim() && buffer.trim().startsWith('data: ')) {
+      const jsonStr = buffer.trim().slice(6);
+      if (jsonStr !== '[DONE]') {
+        try {
+          const data = JSON.parse(jsonStr);
+          const delta = data?.choices?.[0]?.delta || {};
+          const content = delta.content || '';
+          const thinking = delta.reasoning_content || delta.thinking || '';
+          if (content || thinking) {
+            yield { content, thinking, done: false };
+          }
+        } catch (_) {}
+      }
+    }
+
+    circuitBreaker.recordSuccess();
+    yield { content: '', thinking: '', done: true };
+  } catch (err) {
+    // P9-T19：流调用失败，记录到熔断器
+    if (err.name !== 'AbortError') {
+      circuitBreaker.recordFailure();
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * sleep 工具
  */
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-module.exports = { callAI, extractSqlStatements };
+module.exports = { callAI, callAIStream, extractSqlStatements };

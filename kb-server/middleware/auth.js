@@ -13,6 +13,9 @@ const config = require('../config');
 const pool = require('../db/connection');
 const { sendError } = require('../utils/response');
 const errors = require('../utils/errors');
+const { createModuleLogger } = require('../services/logger');
+
+const logger = createModuleLogger('auth');
 
 /**
  * 从请求中提取 JWT token
@@ -56,7 +59,7 @@ async function authRequired(req, res, next) {
       }
     } catch (dbErr) {
       // DB 查询失败时降级为仅校验 token（不影响服务可用性）
-      console.error('[auth] 查询用户活跃状态失败:', dbErr.message);
+      logger.error('查询用户活跃状态失败', { error: dbErr.message });
     }
 
     req.user = { id: decoded.id, username: decoded.username, role: decoded.role };

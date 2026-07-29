@@ -6,6 +6,9 @@
 
 const mysql = require('mysql2/promise');
 const config = require('../config');
+const { createModuleLogger } = require('../services/logger');
+
+const logger = createModuleLogger('db');
 
 const pool = mysql.createPool({
   host: config.db.host,
@@ -27,10 +30,10 @@ if (require.main === module) {
   (async () => {
     try {
       const [rows] = await pool.execute('SELECT 1 AS result');
-      console.log('DB connection OK:', rows[0]);
+      logger.info('DB connection OK', { result: rows[0] });
       process.exit(0);
     } catch (err) {
-      console.error('DB connection FAILED:', err.message);
+      logger.error('DB connection FAILED', { error: err.message });
       process.exit(1);
     }
   })();

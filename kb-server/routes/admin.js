@@ -13,6 +13,9 @@ const errors = require('../utils/errors');
 const { authRequired, requireRole } = require('../middleware/auth');
 const { validatePassword } = require('../utils/password'); // P9-T16
 const { validatePagination } = require('../utils/pagination'); // P9-T31
+const { createModuleLogger } = require('../services/logger');
+
+const logger = createModuleLogger('admin');
 
 router.use(authRequired, requireRole('admin'));
 
@@ -70,7 +73,7 @@ router.delete('/entries/:id', async (req, res) => {
     if (conn) {
       try { await conn.rollback(); } catch (_) {}
     }
-    console.error('[admin] 删除条目失败:', err);
+    logger.error('删除条目失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('删除条目失败', err));
   } finally {
     if (conn) conn.release();
@@ -133,7 +136,7 @@ router.post('/entries/:id/archive', async (req, res) => {
     if (conn) {
       try { await conn.rollback(); } catch (_) {}
     }
-    console.error('[admin] 归档条目失败:', err);
+    logger.error('归档条目失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('归档条目失败', err));
   } finally {
     if (conn) conn.release();
@@ -194,7 +197,7 @@ router.get('/users', async (req, res) => {
 
     return sendSuccess(res, { users, total, page: pageNum, limit: limitNum });
   } catch (err) {
-    console.error('[admin] 查询用户列表失败:', err);
+    logger.error('查询用户列表失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('查询用户列表失败', err));
   }
 });
@@ -261,7 +264,7 @@ router.post('/users', async (req, res) => {
     if (conn) {
       try { await conn.rollback(); } catch (_) {}
     }
-    console.error('[admin] 创建用户失败:', err);
+    logger.error('创建用户失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('创建用户失败', err));
   } finally {
     if (conn) conn.release();
@@ -326,7 +329,7 @@ router.get('/entries/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="kb-export-${new Date().toISOString().slice(0,10)}.csv"`);
     return res.send(csvContent);
   } catch (err) {
-    console.error('[admin] CSV 导出失败:', err);
+    logger.error('CSV 导出失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('CSV 导出失败', err));
   }
 });
@@ -398,7 +401,7 @@ router.get('/audit-logs', async (req, res) => {
 
     return sendSuccess(res, { logs, total, page: pageNum, limit: limitNum });
   } catch (err) {
-    console.error('[admin] 查询操作日志失败:', err);
+    logger.error('查询操作日志失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('查询操作日志失败', err));
   }
 });

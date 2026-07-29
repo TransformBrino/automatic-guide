@@ -1,22 +1,24 @@
 /**
  * services/session.js — 会话管理服务
- * 职责：内存 Map + 文件持久化存储对话上下文，定时清理过期会话。
+ * 职责：基于 session-store 抽象层管理会话，定时清理过期会话。
  * 对应框架文档第十章。
  */
 
-const fs = require('fs');
 const path = require('path');
 const config = require('../config');
+const { createModuleLogger } = require('./logger');
+const { createSessionStore } = require('./session-store');
 
-// 内存会话存储：Map<sessionId, {messages: [], lastActivity: timestamp}>
-const sessions = new Map();
+const logger = createModuleLogger('session');
+
+// 会话存储实例（惰性初始化）
+let store = null;
 
 // 每个会话最多保留的消息数（20 轮 = 40 条）
 const MAX_MESSAGES = 40;
 
 // 持久化文件路径
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+const SESSIONS_FILE = path.join(__dirname, '..', 'data', 'sessions.json');
 
 // 持久化定时器（每 5 秒检查脏数据，减少 IO；P9-T8：从 30s 降至 5s）
 let saveTimer = null;
@@ -24,57 +26,31 @@ let dirty = false;
 let debounceTimer = null; // P9-T8：防抖写入，appendMessage 后 300ms 立即落盘
 
 // ============================================================
+// 初始化存储实例
+// ============================================================
+
+/**
+ * 惰性初始化存储实例
+ * @returns {Promise<import('./session-store').MemoryFileStore|import('./session-store').RedisStore>}
+ */
+async function initStore() {
+  if (!store) {
+    store = await createSessionStore(SESSIONS_FILE);
+  }
+  return store;
+}
+
+// ============================================================
 // 文件持久化
 // ============================================================
 
 /**
- * 确保 data 目录存在
+ * 将会话数据保存到磁盘（委托给存储实例）
  */
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
-/**
- * 从文件加载会话数据
- */
-function loadFromFile() {
-  try {
-    ensureDataDir();
-    if (fs.existsSync(SESSIONS_FILE)) {
-      const raw = fs.readFileSync(SESSIONS_FILE, 'utf-8');
-      const data = JSON.parse(raw);
-      if (typeof data === 'object' && data !== null) {
-        for (const [sid, session] of Object.entries(data)) {
-          // 仅加载未过期的会话
-          if (Date.now() - session.lastActivity < config.sessionTimeoutMinutes * 60 * 1000) {
-            sessions.set(sid, session);
-          }
-        }
-      }
-      console.log(`[session] 从文件恢复 ${sessions.size} 个会话`);
-    }
-  } catch (err) {
-    console.error('[session] 加载会话文件失败:', err.message);
-  }
-}
-
-/**
- * 将会话数据保存到文件
- */
-function saveToFile() {
-  try {
-    ensureDataDir();
-    const data = {};
-    for (const [sid, session] of sessions.entries()) {
-      data[sid] = session;
-    }
-    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data), 'utf-8');
-    dirty = false;
-  } catch (err) {
-    console.error('[session] 保存会话文件失败:', err.message);
-  }
+async function saveToFile() {
+  if (!store) return;
+  await store.saveToDisk();
+  dirty = false;
 }
 
 /**
@@ -103,11 +79,13 @@ function markDirty() {
  * @returns {{messages: Array<{role:string, content:string}>, lastActivity: number}}
  */
 function getSession(sessionId) {
-  if (!sessions.has(sessionId)) {
-    sessions.set(sessionId, { messages: [], lastActivity: Date.now() });
+  if (!store.has(sessionId)) {
+    const newSession = { messages: [], lastActivity: Date.now() };
+    store.set(sessionId, newSession);
     markDirty();
+    return newSession;
   }
-  return sessions.get(sessionId);
+  return store.get(sessionId);
 }
 
 /**
@@ -124,6 +102,8 @@ function appendMessage(sessionId, role, content) {
     session.messages = session.messages.slice(-MAX_MESSAGES);
   }
   session.lastActivity = Date.now();
+  // 写回存储（因 store.get() 返回副本，修改后需显式写回）
+  store.set(sessionId, session);
   markDirty();
 }
 
@@ -135,6 +115,8 @@ function clearSession(sessionId) {
   const session = getSession(sessionId);
   session.messages = [];
   session.lastActivity = Date.now();
+  // 写回存储（因 store.get() 返回副本，修改后需显式写回）
+  store.set(sessionId, session);
   markDirty();
 }
 
@@ -150,28 +132,31 @@ function getHistory(sessionId) {
 
 /**
  * 启动定时清理过期会话 + 持久化定时器
- * 每 5 分钟扫描清理 + 每 30 秒持久化（仅脏数据时写文件）
+ * 每 5 分钟扫描清理 + 每 5 秒持久化（仅脏数据时写文件）
  */
-function startCleanupTimer() {
+async function startCleanupTimer() {
   const INTERVAL = 5 * 60 * 1000; // 5 分钟
   const TIMEOUT = config.sessionTimeoutMinutes * 60 * 1000;
 
+  // 初始化存储实例
+  await initStore();
+
   // 启动时从文件恢复
-  loadFromFile();
+  await store.loadFromDisk();
 
   // 定时清理过期会话
   setInterval(() => {
     const now = Date.now();
     let cleaned = 0;
-    for (const [sid, session] of sessions.entries()) {
+    for (const [sid, session] of store.getAll().entries()) {
       if (now - session.lastActivity > TIMEOUT) {
-        sessions.delete(sid);
+        store.del(sid);
         cleaned++;
       }
     }
     if (cleaned > 0) {
       markDirty();
-      console.log(`[session] 清理 ${cleaned} 个过期会话，当前活跃: ${sessions.size}`);
+      logger.info('清理过期会话', { cleaned, active: store.size });
     }
   }, INTERVAL);
 
@@ -184,19 +169,17 @@ function startCleanupTimer() {
 
   // 进程退出时保存
   process.on('exit', () => {
-    if (dirty) saveToFile();
+    if (dirty && store) store.saveToDisk();
   });
   process.on('SIGINT', () => {
-    if (dirty) saveToFile();
-    process.exit(0);
+    if (dirty && store) store.saveToDisk().then(() => process.exit(0));
   });
   process.on('SIGTERM', () => {
-    if (dirty) saveToFile();
-    process.exit(0);
+    if (dirty && store) store.saveToDisk().then(() => process.exit(0));
   });
 
-  console.log(`[session] 会话清理定时器已启动（每 5 分钟扫描，超时 ${config.sessionTimeoutMinutes} 分钟）`);
-  console.log(`[session] 持久化已启用 → ${SESSIONS_FILE}`);
+  logger.info('会话清理定时器已启动', { scanIntervalMin: 5, timeoutMin: config.sessionTimeoutMinutes });
+  logger.info('持久化已启用', { file: SESSIONS_FILE });
 }
 
 module.exports = {

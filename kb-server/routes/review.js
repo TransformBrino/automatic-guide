@@ -11,6 +11,9 @@ const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired, requireRole } = require('../middleware/auth');
 const { validatePagination } = require('../utils/pagination'); // P9-T31
+const { createModuleLogger } = require('../services/logger');
+
+const logger = createModuleLogger('review');
 
 router.use(authRequired);
 
@@ -80,7 +83,7 @@ router.get('/pending', requireRole('reviewer', 'admin'), async (req, res) => {
 
     return sendSuccess(res, { entries, total, page: pageNum, limit: limitNum });
   } catch (err) {
-    console.error('[review] 查询待审核列表失败:', err);
+    logger.error('查询待审核列表失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('查询待审核列表失败', err));
   }
 });
@@ -211,7 +214,7 @@ router.post('/:id', requireRole('reviewer', 'admin'), async (req, res) => {
     if (conn) {
       try { await conn.rollback(); } catch (_) {}
     }
-    console.error('[review] 审核操作失败:', err);
+    logger.error('审核操作失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('审核操作失败', err));
   } finally {
     if (conn) conn.release();

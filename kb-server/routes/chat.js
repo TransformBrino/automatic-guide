@@ -27,6 +27,9 @@ const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
 const { chatLimiter } = require('../middleware/rate-limiter');
+const { createModuleLogger } = require('../services/logger');
+
+const logger = createModuleLogger('chat');
 
 // 所有 /api/chat 接口都需要登录 + 限流
 router.use(authRequired);
@@ -171,13 +174,201 @@ router.post('/', async (req, res) => {
 
     return sendSuccess(res, withThinking({ ...responseData, sessionId }));
   } catch (err) {
+    // P9-T19：熔断器打开时的友好提示
+    if (err.isCircuitOpen) {
+      return sendError(res, errors.AI_API_ERROR, 'AI 服务暂时不可用，请稍后再试');
+    }
     // AI 调用失败（超时 / HTTP 错误）
     if (err.isTimeout || err.httpStatus) {
-      console.error('[chat] AI 调用失败:', err.message);
+      logger.error('AI 调用失败', { error: err.message });
       return sendError(res, errors.AI_API_ERROR, safeErrorMsg('AI 调用失败', err));
     }
-    console.error('[chat] 未预期错误:', err);
+    logger.error('未预期错误', { error: err.message });
     return sendError(res, errors.INTERNAL_ERROR, safeErrorMsg('服务器内部错误', err));
+  }
+});
+
+// ============================================================
+// POST /api/chat/stream — 流式对话接口（P9-T7：SSE 逐 token 输出）
+// ============================================================
+router.post('/stream', async (req, res) => {
+  const { message, sessionId, enableWebSearch, enableThinking } = req.body;
+  if (!message || typeof message !== 'string' || message.trim() === '') {
+    return sendError(res, errors.VALIDATION_ERROR, 'message 不能为空');
+  }
+  if (!sessionId || typeof sessionId !== 'string') {
+    return sendError(res, errors.VALIDATION_ERROR, 'sessionId 不能为空');
+  }
+
+  const user = req.user;
+  const userMessage = message.trim();
+  const clientIp = req.ip || req.connection?.remoteAddress || null;
+
+  // 设置 SSE 响应头
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no', // 禁用 nginx 缓冲
+  });
+
+  const sendEvent = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const endStream = () => {
+    if (!res.writableEnded) res.end();
+  };
+
+  try {
+    // 步骤 2：获取对话上下文
+    const history = session.getHistory(sessionId);
+
+    // 步骤 3：构建 Prompt
+    let messages = promptBuilder.buildMessages(history, userMessage);
+
+    // 步骤 3.5：联网搜索
+    let searchResults = '';
+    if (config.ai.enableWebSearch && enableWebSearch) {
+      searchResults = await searchService.search(userMessage);
+      if (searchResults && !searchResults.startsWith('[联网搜索失败') && !searchResults.startsWith('[联网搜索超时')) {
+        const sysMsg = messages.find(m => m.role === 'system');
+        if (sysMsg) {
+          sysMsg.content += '\n\n【以下是实时联网搜索结果，请结合这些信息回答问题】\n' + searchResults;
+        }
+      }
+    }
+
+    // 步骤 4：流式调用 AI
+    let fullContent = '';
+    let fullThinking = '';
+
+    for await (const chunk of ai.callAIStream(messages, { enableWebSearch, enableThinking })) {
+      if (chunk.done) break;
+
+      if (chunk.thinking) {
+        fullThinking += chunk.thinking;
+        sendEvent('thinking', { token: chunk.thinking });
+      }
+      if (chunk.content) {
+        fullContent += chunk.content;
+        sendEvent('token', { token: chunk.content });
+      }
+    }
+    logger.info('AI 流式响应完成', { contentLength: fullContent.length, thinkingLength: fullThinking.length });
+
+    // SQL 提取（在完整文本上执行，避免半截代码块）
+    const sqlStatements = ai.extractSqlStatements(fullContent);
+
+    // 思考内容包装
+    let replyText = fullContent;
+    if (fullThinking) {
+      replyText = `🧠 深度思考\n\`\`\`\n${fullThinking}\n\`\`\`\n\n---\n\n${fullContent}`;
+    }
+
+    // 步骤 5：分支处理
+    const withThinking = (data) => {
+      if (fullThinking) data.thinking = fullThinking;
+      return data;
+    };
+
+    // 分支 A：AI 追问（无 SQL）
+    if (!sqlStatements || sqlStatements.length === 0) {
+      session.appendMessage(sessionId, 'user', userMessage);
+      session.appendMessage(sessionId, 'assistant', replyText);
+      sendEvent('result', withThinking({
+        type: 'follow_up',
+        message: replyText,
+        sessionId,
+      }));
+      return endStream();
+    }
+
+    // 分支 B：有 SQL
+    const primaryType = detectPrimaryType(sqlStatements);
+
+    let processedSqls = sqlStatements.map((sql) =>
+      sql.replace(/__CREATED_BY__/g, escapeSqlString(user.username))
+    );
+
+    if (primaryType === 'insert') {
+      processedSqls = processedSqls.map((sql) =>
+        injectEntryCode(sql, '__ENTRY_CODE__', user.username)
+      );
+    }
+
+    let oldEntries = [];
+    if (primaryType === 'update') {
+      oldEntries = await snapshotOldEntriesForUpdate(sqlStatements);
+    }
+
+    const result = await sqlExecutor.validateAndExecute(processedSqls, user.id, {
+      entryCode: primaryType === 'insert'
+    });
+
+    if (!result.success) {
+      const errMsg = `操作失败：${result.error}`;
+      session.appendMessage(sessionId, 'user', userMessage);
+      session.appendMessage(sessionId, 'assistant', errMsg);
+      sendEvent('result', withThinking({
+        type: 'error',
+        message: errMsg,
+        sessionId,
+      }));
+      return endStream();
+    }
+
+    let responseData;
+    switch (primaryType) {
+      case 'insert':
+        responseData = await handleInsertSuccess(result, user, clientIp, replyText);
+        break;
+      case 'update':
+        responseData = await handleUpdateSuccess(result, oldEntries, user, clientIp, replyText);
+        break;
+      case 'delete':
+        responseData = await handleDeleteSuccess(result, user, clientIp, replyText);
+        break;
+      case 'select':
+      default:
+        responseData = handleSelectSuccess(result, replyText);
+        if (responseData.results && responseData.results.length === 0) {
+          const firstReplyText = replyText;
+          const autoData = await autoContinueInsert(messages, user, clientIp);
+          if (autoData) {
+            responseData = autoData;
+            if (autoData.message) replyText = autoData.message;
+            if (autoData.thinking) fullThinking = autoData.thinking;
+            res.locals._autoInsertDone = true;
+            res.locals._firstReplyText = firstReplyText;
+          }
+        }
+        break;
+    }
+
+    // 步骤 6：追加对话上下文
+    session.appendMessage(sessionId, 'user', userMessage);
+    if (res.locals._autoInsertDone && res.locals._firstReplyText) {
+      session.appendMessage(sessionId, 'assistant', res.locals._firstReplyText);
+    }
+    session.appendMessage(sessionId, 'assistant', replyText);
+
+    sendEvent('result', withThinking({ ...responseData, sessionId }));
+    return endStream();
+  } catch (err) {
+    // P9-T19：熔断器打开时的友好提示
+    if (err.isCircuitOpen) {
+      sendEvent('error', { message: 'AI 服务暂时不可用，请稍后再试' });
+      return endStream();
+    }
+    if (err.isTimeout || err.httpStatus) {
+      logger.error('AI 流式调用失败', { error: err.message });
+      sendEvent('error', { message: safeErrorMsg('AI 调用失败', err) });
+      return endStream();
+    }
+    logger.error('流式未预期错误', { error: err.message });
+    sendEvent('error', { message: safeErrorMsg('服务器内部错误', err) });
+    return endStream();
   }
 });
 
@@ -224,7 +415,7 @@ async function snapshotOldEntriesForUpdate(sqlStatements) {
         );
         if (rows.length > 0) oldEntries.push(rows[0]);
       } catch (e) {
-        console.error('[chat] 快照旧数据失败 (id):', e.message);
+        logger.error('快照旧数据失败', { error: e.message });
       }
       continue;
     }
@@ -240,7 +431,7 @@ async function snapshotOldEntriesForUpdate(sqlStatements) {
         );
         if (rows.length > 0) oldEntries.push(rows[0]);
       } catch (e) {
-        console.error('[chat] 快照旧数据失败 (entry_code):', e.message);
+        logger.error('快照旧数据失败', { error: e.message });
       }
     }
   }
@@ -269,7 +460,7 @@ async function handleInsertSuccess(result, user, ip, replyText) {
         [insertId]
       );
     } catch (e) {
-      console.error('[chat] 更新条目状态为 pending_review 失败:', e.message);
+      logger.error('更新条目状态为 pending_review 失败', { error: e.message });
     }
 
     // 写 audit_log
@@ -279,7 +470,7 @@ async function handleInsertSuccess(result, user, ip, replyText) {
         [insertId, 'create', user.username, 'AI 辅助录入（待审核）', ip]
       );
     } catch (e) {
-      console.error('[chat] 写 audit_log(create) 失败:', e.message);
+      logger.error('写 audit_log(create) 失败', { error: e.message });
     }
 
     // 查询刚插入的条目摘要
@@ -290,7 +481,7 @@ async function handleInsertSuccess(result, user, ip, replyText) {
       );
       if (rows.length > 0) entry = rows[0];
     } catch (e) {
-      console.error('[chat] 查询新插入条目失败:', e.message);
+      logger.error('查询新插入条目失败', { error: e.message });
     }
   }
 
@@ -313,7 +504,7 @@ async function handleUpdateSuccess(result, oldEntries, user, ip, replyText) {
         [old.id, old.version_label, 'AI 辅助更新', user.username, old.full_content]
       );
     } catch (e) {
-      console.error('[chat] 写 version_history 失败:', e.message);
+      logger.error('写 version_history 失败', { error: e.message });
     }
 
     // 写 audit_log
@@ -323,7 +514,7 @@ async function handleUpdateSuccess(result, oldEntries, user, ip, replyText) {
         [old.id, 'update', user.username, 'AI 辅助更新', ip]
       );
     } catch (e) {
-      console.error('[chat] 写 audit_log(update) 失败:', e.message);
+      logger.error('写 audit_log(update) 失败', { error: e.message });
     }
   }
 
@@ -348,7 +539,7 @@ async function handleDeleteSuccess(result, user, ip, replyText) {
       [null, 'delete', user.username, 'AI 辅助删除', ip]
     );
   } catch (e) {
-    console.error('[chat] 写 audit_log(delete) 失败:', e.message);
+    logger.error('写 audit_log(delete) 失败', { error: e.message });
   }
   return {
     type: 'entry_deleted',
@@ -457,7 +648,7 @@ async function autoContinueInsert(messages, user, clientIp) {
   try {
     secondCall = await ai.callAI(followUpMessages, {});
   } catch (e) {
-    console.error('[chat] 自动录入 AI 调用失败:', e.message);
+    logger.error('自动录入 AI 调用失败', { error: e.message });
     return null;
   }
 
@@ -482,7 +673,7 @@ async function autoContinueInsert(messages, user, clientIp) {
     entryCode: true
   });
   if (!result.success) {
-    console.error('[chat] 自动录入 SQL 执行失败:', result.error);
+    logger.error('自动录入 SQL 执行失败', { error: result.error });
     return null;
   }
 
