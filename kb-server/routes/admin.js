@@ -12,6 +12,7 @@ const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired, requireRole } = require('../middleware/auth');
 const { validatePassword } = require('../utils/password'); // P9-T16
+const { validatePagination } = require('../utils/pagination'); // P9-T31
 
 router.use(authRequired, requireRole('admin'));
 
@@ -144,11 +145,15 @@ router.post('/entries/:id/archive', async (req, res) => {
 // ============================================================
 router.get('/users', async (req, res) => {
   try {
-    const { role, page = 1, limit = 50 } = req.query;
+    const { role, page, limit } = req.query;
 
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
-    const offset = (pageNum - 1) * limitNum;
+    // P9-T31：分页参数安全校验，额外验证非负整数
+    let pageNum, limitNum, offset;
+    try {
+      ({ pageNum, limitNum, offset } = validatePagination(page, limit, 100, 50));
+    } catch (e) {
+      return sendError(res, errors.VALIDATION_ERROR, e.message);
+    }
 
     const conditions = [];
     const params = [];
@@ -168,7 +173,7 @@ router.get('/users', async (req, res) => {
     );
     const total = countRows[0].total;
 
-    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
+    // P9-T31：limitNum/offset 已通过 validatePagination 严格校验，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
     const [rows] = await pool.execute(
       `SELECT id, username, display_name, role, is_active, created_at
        FROM kb_users
@@ -331,11 +336,15 @@ router.get('/entries/export', async (req, res) => {
 // ============================================================
 router.get('/audit-logs', async (req, res) => {
   try {
-    const { action, entry_id, page = 1, limit = 50 } = req.query;
+    const { action, entry_id, page, limit } = req.query;
 
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
-    const offset = (pageNum - 1) * limitNum;
+    // P9-T31：分页参数安全校验
+    let pageNum, limitNum, offset;
+    try {
+      ({ pageNum, limitNum, offset } = validatePagination(page, limit, 200, 50));
+    } catch (e) {
+      return sendError(res, errors.VALIDATION_ERROR, e.message);
+    }
 
     const conditions = [];
     const params = [];
@@ -363,7 +372,7 @@ router.get('/audit-logs', async (req, res) => {
     );
     const total = countRows[0].total;
 
-    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
+    // P9-T31：limitNum/offset 已通过 validatePagination 严格校验，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
     const [rows] = await pool.execute(
       `SELECT log.id, log.entry_id, log.action, log.operator, log.detail, log.ip_address, log.created_at,
               e.title AS entry_title, e.entry_code

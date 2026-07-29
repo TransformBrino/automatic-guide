@@ -10,6 +10,7 @@ const pool = require('../db/connection');
 const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired, requireRole } = require('../middleware/auth');
+const { validatePagination } = require('../utils/pagination'); // P9-T31
 
 router.use(authRequired);
 
@@ -24,9 +25,13 @@ router.get('/pending', requireRole('reviewer', 'admin'), async (req, res) => {
       knowledge_type, scene, page = 1, limit = 20,
     } = req.query;
 
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
-    const offset = (pageNum - 1) * limitNum;
+    // P9-T31：分页参数安全校验
+    let pageNum, limitNum, offset;
+    try {
+      ({ pageNum, limitNum, offset } = validatePagination(page, limit));
+    } catch (e) {
+      return sendError(res, errors.VALIDATION_ERROR, e.message);
+    }
 
     const conditions = ["status = 'pending_review'"];
     const params = [];
@@ -51,7 +56,7 @@ router.get('/pending', requireRole('reviewer', 'admin'), async (req, res) => {
     const total = countRows[0].total;
 
     // 分页查询
-    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
+    // P9-T31：limitNum/offset 已通过 validatePagination 严格校验，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
     const [rows] = await pool.execute(
       `SELECT id, entry_code, title, knowledge_type, scene, summary, full_content, architecture_layer, created_by, updated_at
        FROM kb_entries ${whereClause}

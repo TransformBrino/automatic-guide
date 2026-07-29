@@ -10,6 +10,7 @@ const pool = require('../db/connection');
 const { sendSuccess, sendError, safeErrorMsg } = require('../utils/response');
 const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
+const { validatePagination } = require('../utils/pagination'); // P9-T31
 
 router.use(authRequired);
 
@@ -25,9 +26,13 @@ router.get('/', async (req, res) => {
       sort = 'created_at', order = 'DESC',
     } = req.query;
 
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
-    const offset = (pageNum - 1) * limitNum;
+    // P9-T31：分页参数安全校验
+    let pageNum, limitNum, offset;
+    try {
+      ({ pageNum, limitNum, offset } = validatePagination(page, limit));
+    } catch (e) {
+      return sendError(res, errors.VALIDATION_ERROR, e.message);
+    }
 
     // 构建 WHERE 子句
     const conditions = [];
@@ -38,6 +43,8 @@ router.get('/', async (req, res) => {
       const likePattern = `%${q.trim()}%`;
       params.push(q.trim(), likePattern, likePattern);
     }
+
+    const hasSearch = !!(q && typeof q === 'string' && q.trim() !== '');
 
     if (knowledge_type) {
       conditions.push('knowledge_type = ?');
@@ -88,18 +95,24 @@ router.get('/', async (req, res) => {
     const [countRows] = await pool.execute(countSql, params);
     const total = countRows[0].total;
 
-    // 查询分页数据
-    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
+    // 当有搜索词时，添加 MATCH 相关性评分字段（P9-T13：ngram 分词）
+    const relevanceSelect = hasSearch
+      ? ', MATCH(title, summary, full_content) AGAINST(? IN NATURAL LANGUAGE MODE) AS relevance'
+      : '';
+
     const listSql = `
       SELECT id, entry_code, title, knowledge_type, architecture_layer, scene,
              severity, summary, status, score_total, version_label,
-             created_by, reviewer_id, created_at, updated_at, reviewed_at
+             created_by, reviewer_id, created_at, updated_at, reviewed_at${relevanceSelect}
       FROM kb_entries
       ${whereClause}
-      ORDER BY ${sortField} ${sortOrder}
+      ORDER BY ${hasSearch ? 'relevance DESC, ' : ''}${sortField} ${sortOrder}
       LIMIT ${limitNum} OFFSET ${offset}
     `;
-    const [rows] = await pool.execute(listSql, params);
+
+    // 搜索词参数需在 listSql 中再次传递（用于 relevance 计算）
+    const listParams = hasSearch ? [q.trim(), ...params] : params;
+    const [rows] = await pool.execute(listSql, listParams);
 
     // 格式化输出（去除 full_content 等大字段，列表不需要）
     const entries = rows.map((row) => ({
@@ -236,9 +249,13 @@ router.get('/:id/history', async (req, res) => {
       return sendError(res, errors.VALIDATION_ERROR, '无效的条目 ID');
     }
 
-    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limitNum = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
-    const offset = (pageNum - 1) * limitNum;
+    // P9-T31：分页参数安全校验（版本历史最大 50 条/页）
+    let pageNum, limitNum, offset;
+    try {
+      ({ pageNum, limitNum, offset } = validatePagination(req.query.page, req.query.limit, 50, 20));
+    } catch (e) {
+      return sendError(res, errors.VALIDATION_ERROR, e.message);
+    }
 
     // 确认条目存在
     const [check] = await pool.execute('SELECT id FROM kb_entries WHERE id = ? LIMIT 1', [id]);
@@ -254,7 +271,7 @@ router.get('/:id/history', async (req, res) => {
     const total = countRows[0].total;
 
     // 分页查询（不含 full_content_snapshot 大字段）
-    // limitNum/offset 已通过 parseInt 严格校验为整数，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
+    // P9-T31：limitNum/offset 已通过 validatePagination 严格校验，且 mysql2 execute() 不支持 LIMIT/OFFSET 参数化
     const [rows] = await pool.execute(
       `SELECT id, version_label, change_summary, changed_by, created_at
        FROM kb_version_history

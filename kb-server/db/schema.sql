@@ -50,7 +50,7 @@ CREATE TABLE kb_entries (
   INDEX idx_status (status),
   INDEX idx_created_at (created_at),
   INDEX idx_score_total (score_total),
-  FULLTEXT idx_fulltext (title, summary, full_content)
+  FULLTEXT idx_fulltext (title, summary, full_content) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识条目主表';
 
 -- ------------------------------------------------------------
