@@ -39,9 +39,10 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+      scriptSrcAttr: ["'unsafe-inline'"], // 允许内联事件处理器（onclick 等）
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", "https://cdn.jsdelivr.net"], // 允许 CDN source map 等连接
     },
   },
   crossOriginEmbedderPolicy: false, // 允许加载 CDN 资源
@@ -188,30 +189,29 @@ function gracefulShutdown(signal) {
   shuttingDown = true;
   logger.info(`收到 ${signal} 信号，开始优雅关闭...`);
 
-  // 1. 停止接收新请求
-  server.close(() => {
-    logger.info('HTTP 服务已关闭');
-  });
-
-  // 2. 设置强制退出超时（10 秒后仍未完成则强制退出）
+  // 设置强制退出超时（10 秒后仍未完成则强制退出）
   const forceExit = setTimeout(() => {
     logger.error('优雅关闭超时，强制退出');
     process.exit(1);
   }, 10000);
   forceExit.unref();
 
-  // 3. 释放数据库连接池
-  pool.end()
-    .then(() => {
+  // 1. 停止接收新请求
+  // 2. 等待现有请求处理完毕
+  // 3. 释放数据库连接池（P10-CQ-19：移入 close 回调防止竞态）
+  server.close(async () => {
+    logger.info('HTTP 服务已关闭，所有请求处理完毕');
+    try {
+      await pool.end();
       logger.info('数据库连接池已释放');
       clearTimeout(forceExit);
       process.exit(0);
-    })
-    .catch((err) => {
+    } catch (err) {
       logger.error('关闭连接池失败', { error: err.message });
       clearTimeout(forceExit);
       process.exit(1);
-    });
+    }
+  });
 }
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

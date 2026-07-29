@@ -274,7 +274,7 @@ router.post('/users', async (req, res) => {
 // ============================================================
 // GET /api/admin/entries/export — 导出 CSV
 // P9-T18：支持按知识类型/场景/状态筛选导出，UTF-8 BOM 兼容 Excel
-// ============================================================
+// P10-CQ-24：改为流式查询，逐行写入 CSV，避免全量加载到内存
 router.get('/entries/export', async (req, res) => {
   try {
     const { knowledge_type, scene, status } = req.query;
@@ -299,18 +299,26 @@ router.get('/entries/export', async (req, res) => {
       ? 'WHERE ' + conditions.join(' AND ')
       : '';
 
-    const [rows] = await pool.execute(
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="kb-export-${new Date().toISOString().slice(0,10)}.csv"`);
+
+    // UTF-8 BOM 确保 Excel 正确识别中文
+    res.write('\uFEFF');
+
+    // CSV 表头
+    const headers = ['编号', '标题', '知识类型', '场景', '状态', '评分', '创建者', '创建时间'];
+    res.write(headers.map(h => `"${h}"`).join(',') + '\n');
+
+    // 流式读取逐行写入，避免大数据量 OOM
+    const stream = pool.query(
       `SELECT entry_code, title, knowledge_type, scene, status, score_total, created_by, created_at
        FROM kb_entries ${whereClause}
        ORDER BY created_at DESC`,
       params
-    );
+    ).stream();
 
-    // 构建 CSV（UTF-8 BOM 确保 Excel 正确识别中文）
-    const headers = ['编号', '标题', '知识类型', '场景', '状态', '评分', '创建者', '创建时间'];
-    const csvLines = [headers.join(',')];
-    for (const row of rows) {
-      csvLines.push([
+    stream.on('data', (row) => {
+      const line = [
         `"${(row.entry_code || '').replace(/"/g, '""')}"`,
         `"${(row.title || '').replace(/"/g, '""')}"`,
         `"${(row.knowledge_type || '')}"`,
@@ -319,17 +327,20 @@ router.get('/entries/export', async (req, res) => {
         row.score_total ?? '',
         `"${(row.created_by || '')}"`,
         `"${row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : ''}"`,
-      ].join(','));
-    }
+      ].join(',');
+      res.write(line + '\n');
+    });
 
-    const bom = '\uFEFF';
-    const csvContent = bom + csvLines.join('\n');
+    stream.on('end', () => {
+      res.end();
+    });
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="kb-export-${new Date().toISOString().slice(0,10)}.csv"`);
-    return res.send(csvContent);
+    stream.on('error', (err) => {
+      logger.error('CSV 流式导出失败', { error: err.message });
+      if (!res.writableEnded) res.end();
+    });
   } catch (err) {
-    logger.error('CSV 导出失败', { error: err.message });
+    logger.error('CSV 导出初始化失败', { error: err.message });
     return sendError(res, errors.DB_ERROR, safeErrorMsg('CSV 导出失败', err));
   }
 });

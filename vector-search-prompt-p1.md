@@ -414,3 +414,113 @@ async function startVectorStore() {
   setInterval(syncFromDb, 30 * 60 * 1000);
   console.log('[vector-store] 向量存储已启动，定时同步间隔 30 分钟');
 }
+
+module.exports = {
+  loadFromDb,
+  setVector,
+  deleteVector,
+  getVector,
+  getAllVectors,
+  getVectorCount,
+  syncFromDb,
+  startVectorStore,
+};
+```
+
+**验证**：启动服务，日志输出 `[vector-store] 从 MySQL 加载 0 个向量`（初始无数据）。
+
+---
+
+## 步骤 6：新建 `services/vector-search.js` — 向量检索
+
+**新建文件**：`kb-server/services/vector-search.js`
+
+**职责**：接收查询文本，返回语义最相似的 Top-K 条目 ID 及相似度分数。
+
+**实现代码**：
+
+```javascript
+/**
+ * services/vector-search.js — 向量检索
+ * 职责：接收查询文本，返回语义最相似的 Top-K 条目 ID 及相似度分数。
+ */
+
+const embedding = require('./embedding');
+const vectorStore = require('./vector-store');
+
+/**
+ * 余弦相似度计算
+ */
+function cosineSimilarity(a, b) {
+  if (a.length !== b.length) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  return denominator === 0 ? 0 : dotProduct / denominator;
+}
+
+/**
+ * 向量相似度检索
+ * @param {string} queryText - 查询文本
+ * @param {number} topK - 返回数量，默认 20
+ * @returns {Promise<Array<{entryId: number, score: number}>>}
+ */
+async function search(queryText, topK = 20) {
+  // 1. 获取查询向量
+  const queryVec = await embedding.getEmbedding(queryText);
+
+  // 2. 遍历内存 Map 中所有向量，计算余弦相似度
+  const scored = [];
+  for (const [entryId, vecData] of vectorStore.getAllVectors()) {
+    const score = cosineSimilarity(queryVec, vecData.embedding);
+    scored.push({ entryId, score });
+  }
+
+  // 3. 排序取 Top-K
+  return scored.sort((a, b) => b.score - a.score).slice(0, topK);
+}
+
+module.exports = { search };
+```
+
+**验证**：手动在 `kb_entry_embeddings` 中 INSERT 一条测试数据，调 `search('测试查询')` 确认返回结果。
+
+---
+
+## 步骤 7：修改 `server.js` — 向量存储初始化
+
+**修改文件**：`kb-server/server.js`
+
+在 `session.startCleanupTimer()` 调用之后，`app.listen()` 之前新增：
+
+```javascript
+// 启动向量存储（从 MySQL 加载向量到内存 + 启动定时同步）
+const vectorStore = require('./services/vector-store');
+vectorStore.startVectorStore().then(() => {
+  console.log('[server] 向量存储初始化完成');
+}).catch(err => {
+  console.error('[server] 向量存储初始化失败:', err.message);
+});
+```
+
+**验证**：启动日志中看到 `[vector-store] 从 MySQL 加载 X 个向量`。
+
+---
+
+## 第 1 批完成标准
+
+- [ ] `kb_entry_embeddings` 表已创建
+- [ ] `schema.sql` 已更新
+- [ ] `config.js` 和 `.env.example` 已新增 Embedding 配置项
+- [ ] `services/embedding.js` 可正常调用，日志输出探测成功信息
+- [ ] `services/vector-store.js` 启动时加载正常
+- [ ] `services/vector-search.js` 可正常计算余弦相似度
+- [ ] `server.js` 启动时自动初始化向量存储
+
+全部完成后，请告知我进入第 2 批（业务改造层）。

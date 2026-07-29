@@ -2558,27 +2558,27 @@ module.exports = {
 | P9-T29 | ai.js OR 应为 AND | ✅ | 2026-07-28 | Bug/P3：|| 改为 && |
 | P9-T30 | SQL 注入：LIMIT 拼接 | ✅ | 2026-07-28 | P1 安全：添加注释 + 验证无实际风险 |
 | P9-T31 | LIMIT/OFFSET 非负整数校验 | ✅ | 2026-07-29 | P1 安全：validatePagination() 统一校验 5 处 |
-| P10-CQ-05 | autoContinueInsert 错误反馈 | ⬜ | - | P0：失败时静默返回 null → 明确错误信息 |
-| P10-CQ-16 | chat.js 流式/非流式代码抽取 | ⬜ | - | P0：200 行重复代码 → chat-processor.js 共享 |
-| P10-UX-16 | SSE 流中断错误提示+重试 | ⬜ | - | P0：半截消息 → 友好提示+重发按钮 |
+| P10-CQ-05 | autoContinueInsert 错误反馈 | ✅ | 2026-07-29 | P0：失败时静默返回 null → 明确错误信息 |
+| P10-CQ-16 | chat.js 流式/非流式代码抽取 | ✅ | 2026-07-29 | P0：200 行重复代码 → chat-processor.js + chat-helpers.js 共享 |
+| P10-UX-16 | SSE 流中断错误提示+重试 | ✅ | 2026-07-29 | P0：半截消息 → 友好提示+重发按钮 |
 | P10-CQ-14 | chat.js 纯函数单元测试 | ⬜ | - | P1：detectPrimaryType 等无测试覆盖 |
 | P10-CQ-15 | 防暴力破解逻辑测试 | ⬜ | - | P1：5次锁定/锁定期间拒绝/重置 |
 | P10-CQ-27 | 熔断器状态转换测试 | ⬜ | - | P1：Closed→Open→HalfOpen→Closed |
 | P10-CQ-08 | CORS 生产环境收紧 | ⬜ | - | P1：* → ALLOWED_ORIGINS 环境变量 |
-| P10-CQ-19 | 优雅关闭竞态修复 | ⬜ | - | P1：server.close 回调中 pool.end |
-| P10-CQ-24 | CSV 导出流式查询 | ⬜ | - | P1：全量加载 → pool.stream() |
-| P10-UX-04 | 语音输入浏览器兼容检测 | ⬜ | - | P1：不支持时隐藏/提示 |
+| P10-CQ-19 | 优雅关闭竞态修复 | ✅ | 2026-07-29 | P1：server.close 回调中 pool.end |
+| P10-CQ-24 | CSV 导出流式查询 | ✅ | 2026-07-29 | P1：全量加载 → pool.query().stream() |
+| P10-UX-04 | 语音输入浏览器兼容检测 | ✅ | 2026-07-29 | P1：不支持时隐藏按钮 |
 | P10-UX-05 | 错误消息分类友好提示 | ⬜ | - | P1：技术错误 → 用户可理解文案 |
-| P10-UX-06 | 搜索空状态引导文案 | ⬜ | - | P1："暂无数据" → 明确引导 |
+| P10-UX-06 | 搜索空状态引导文案 | ✅ | 2026-07-29 | P1："暂无数据" → 分场景引导 |
 | P10-UX-07 | 六维评分星级组件 | ⬜ | - | P1：下拉选择 → 五星评分 |
-| P10-UX-08 | CDN 资源本地化 | ⬜ | - | P1：marked.js+DOMPurify 本地部署 |
+| P10-UX-08 | CDN 资源本地化 | ✅ | 2026-07-29 | P1：marked.js+DOMPurify 本地部署 |
 | P10-ARC-03 | 审计日志异步写入 | ⬜ | - | P1：同步阻塞 → setImmediate+重试 |
 | P10-FUNC-01 | 审核"退回修改"功能 | ⬜ | - | P1：新增 return_for_revision action |
 | P10-FUNC-03 | CSV 批量导入 | ⬜ | - | P1：POST /api/admin/import |
 | P10-FUNC-05 | 向量检索方案实施 | ⬜ | - | P1：Embedding+余弦相似度回退FULLTEXT |
 | P10-DATA-01 | 业务指标埋点 | ⬜ | - | P1：每日对话/新增/审核/活跃统计 |
 | P10-DATA-02 | AI 调用指标监控 | ⬜ | - | P1：成功率/耗时/token 用量 |
-| P10-EFF-01 | nodemon 监听 prompts | ⬜ | - | P1：修改 system-base.txt 自动重启 |
+| P10-EFF-01 | nodemon 监听 prompts | ✅ | 2026-07-29 | P1：nodemon.json 包含 prompts/ 目录 |
 | P10-TEAM-02 | ESLint/Prettier 配置 | ⬜ | - | P1：统一代码风格 |
 | P10-CQ-01 | chat.js 拆分辅助函数 | ⬜ | - | P2：9 个辅助函数 → chat-helpers.js |
 | P10-CQ-02 | 事务工具函数抽取 | ⬜ | - | P2：withTransaction() 统一模板 |
