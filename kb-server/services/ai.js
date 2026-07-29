@@ -323,11 +323,15 @@ async function* callAIStream(messages, options = {}) {
       }
     }
 
+    // P9-T19：仅当流式调用完整成功时才标记成功（yield 可能因消费者断开而抛异常）
+    let hasCompleted = false;
+
     circuitBreaker.recordSuccess();
+    hasCompleted = true;
     yield { content: '', thinking: '', done: true };
   } catch (err) {
-    // P9-T19：流调用失败，记录到熔断器
-    if (err.name !== 'AbortError') {
+    // P9-T19：仅当流未正常完成时才记录失败（防止 yield 抛异常时重复计数）
+    if (!hasCompleted && err.name !== 'AbortError') {
       circuitBreaker.recordFailure();
     }
     throw err;

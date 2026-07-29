@@ -21,8 +21,9 @@
 | P7 | 部署上线 | 3 | 内网通过 Nginx 访问，PM2 守护运行 | P6 |
 | P8 | 优化改进 | 10 | 全部 10 项优化改进完成 | P7 |
 | P9 | 项目审查优化 | 29 | 全部 29 项优化建议完成 | P8 |
+| P10 | 第2次审查优化 | 43 | 代码质量 + 用户体验 + 项目改进全面覆盖 | P9 |
 
-**总任务数**：74 个（P0-P7 共 35 个 + P8 共 10 个 + P9 共 29 个）。每个任务均可独立验收、独立提交。
+**总任务数**：117 个（P0-P7 共 35 个 + P8 共 10 个 + P9 共 29 个 + P10 共 43 个）。每个任务均可独立验收、独立提交。
 
 ---
 
@@ -1985,7 +1986,483 @@ module.exports = {
 
 ---
 
-## 十三、进度追踪表
+## 十四、P10 · 第2次审查优化
+
+> **来源**：[code-review-report.md](./code-review-report.md)（2026-07-29 第2次全面审查）
+> **任务编号规范**：`P10-{类别}-{序号}`，类别包括 CQ（代码质量）、UX（用户体验）、ARC（架构）、FUNC（功能）、DATA（数据）、EFF（效率）、TECH（技术）、TEAM（协作）、COMP（竞品对标）
+
+---
+
+### P10 P0 优先级（3 项，本周完成）
+
+#### P10-CQ-05 · autoContinueInsert 失败时返回明确错误
+
+- **前置依赖**：无
+- **交付物**：`routes/chat.js` 修改
+- **实现要点**：`autoContinueInsert` 中 AI 调用失败时，不再静默返回 null，改为记录 warning 日志并返回明确的错误信息给前端
+- **验收标准**
+  - [ ] AI 二次调用失败时，前端显示"自动录入失败，请手动重新描述"
+  - [ ] 服务端 logger.warn 记录失败原因
+
+#### P10-CQ-16 · chat.js 流式/非流式代码重复抽取
+
+- **前置依赖**：无
+- **交付物**：`services/chat-processor.js`（新建）+ `routes/chat.js` 修改
+- **实现要点**：
+  - 抽取 `POST /` 和 `POST /stream` 的共享步骤（会话加载、Prompt 构建、搜索注入、SQL 处理、副作用处理）为 `processChatMessage()` 函数
+  - 两个端点只负责各自的输入/输出格式（同步 JSON vs SSE 流式）
+- **验收标准**
+  - [ ] `POST /` 和 `POST /stream` 功能完全不变
+  - [ ] chat.js 从 686 行减少至约 350 行
+  - [ ] 端到端测试全绿
+
+#### P10-UX-16 · 流式连接中断时增加错误提示和重试
+
+- **前置依赖**：P10-CQ-16
+- **交付物**：`public/index.html` 修改
+- **实现要点**：`sendChat` 的 ReadableStream 读取 catch 中检测连接中断，显示"响应中断，请重试"并提供重发按钮
+- **验收标准**
+  - [ ] 模拟网络中断时，前端显示友好错误提示而非半截消息
+  - [ ] 显示"重试"按钮，点击后重新发送
+
+---
+
+### P10 P1 优先级（19 项，本月完成）
+
+#### P10-CQ-14 · chat.js 纯函数单元测试
+
+- **前置依赖**：P10-CQ-16
+- **交付物**：`tests/chat.test.js`（新建）
+- **实现要点**：为 `detectPrimaryType`、`escapeSqlString`、`injectEntryCode` 等纯函数编写测试用例
+- **验收标准**
+  - [ ] 覆盖 INSERT/UPDATE/DELETE/SELECT 类型检测
+  - [ ] 覆盖 SQL 注入转义
+  - [ ] 覆盖占位符注入
+
+#### P10-CQ-15 · 防暴力破解逻辑测试
+
+- **前置依赖**：无
+- **交付物**：`tests/auth-bruteforce.test.js`（新建）
+- **实现要点**：测试连续 5 次错误密码 → 锁定；锁定期间正确密码也拒绝；正确密码后计数重置
+- **验收标准**
+  - [ ] 5 次错误后锁定
+  - [ ] 锁定后正确密码也返回错误
+  - [ ] 重置后计数器归零
+
+#### P10-CQ-27 · 熔断器状态转换测试
+
+- **前置依赖**：无
+- **交付物**：`tests/circuit-breaker.test.js`（新建）
+- **实现要点**：测试 Closed → Open（5 次失败）、Open → HalfOpen（30s）、HalfOpen → Closed（成功）、HalfOpen → Open（失败）
+- **验收标准**
+  - [ ] 4 项状态转换全部验证
+  - [ ] 不依赖真实 AI API（Mock）
+
+#### P10-CQ-08 · CORS 生产环境收紧
+
+- **前置依赖**：无
+- **交付物**：`server.js` + `config.js` + `.env.example` 修改
+- **实现要点**：`Access-Control-Allow-Origin: *` 改为读取 `ALLOWED_ORIGINS` 环境变量，生产环境配置为具体域名
+- **验收标准**
+  - [ ] 开发环境仍允许所有来源
+  - [ ] 生产环境仅允许配置的域名
+
+#### P10-CQ-19 · 优雅关闭竞态修复
+
+- **前置依赖**：无
+- **交付物**：`server.js` 修改
+- **实现要点**：将 `pool.end()` 移入 `server.close()` 的回调中，确保所有 HTTP 请求处理完毕后再关闭连接池
+- **验收标准**
+  - [ ] SIGTERM 后服务端等待活跃请求完成后才释放连接池
+  - [ ] 10 秒超时兜底
+
+#### P10-CQ-24 · CSV 导出流式查询
+
+- **前置依赖**：无
+- **交付物**：`routes/admin.js` 修改
+- **实现要点**：`pool.query(sql).stream()` 逐行写入 CSV，避免一次性加载全量数据到内存
+- **验收标准**
+  - [ ] 1000+ 条数据导出内存占用稳定（非 O(n)增长）
+  - [ ] CSV 格式与修复前一致
+
+#### P10-UX-04 · 语音输入浏览器兼容检测
+
+- **前置依赖**：无
+- **交付物**：`public/index.html` 修改
+- **实现要点**：初始化时检测 `SpeechRecognition` API，不存在时隐藏语音按钮或显示 tooltip
+- **验收标准**
+  - [ ] Chrome 显示语音按钮
+  - [ ] Firefox 隐藏或显示不可用提示
+
+#### P10-UX-05 · 错误消息分类与用户友好提示
+
+- **前置依赖**：无
+- **交付物**：`public/index.html` + `utils/response.js` 修改
+- **实现要点**：前端对常见错误码映射友好文案（网络错误、AI 超时、权限不足、服务繁忙）
+- **验收标准**
+  - [ ] "AI API 返回 HTTP 502" → "AI 服务繁忙，请稍后重试"
+  - [ ] "login_attempts" → "密码错误次数过多，请 15 分钟后再试"
+
+#### P10-UX-06 · 搜索空状态引导文案
+
+- **前置依赖**：无
+- **交付物**：`public/index.html` 修改
+- **实现要点**：搜索无结果时显示"未找到匹配'{关键词}'的条目，请尝试调整关键词"
+- **验收标准**
+  - [ ] 搜索无结果时有明确引导文字
+  - [ ] 筛选无结果和搜索无结果使用不同文案
+
+#### P10-UX-07 · 六维评分改为星级评分组件
+
+- **前置依赖**：无
+- **交付物**：`public/index.html` 修改
+- **实现要点**：用纯 CSS/CSS 星级组件替代下拉选择框，支持点击选择 1-5 星，默认值 3
+- **验收标准**
+  - [ ] 审核面板加载时 6 个维度各显示 3 星
+  - [ ] 点击第 4 颗星，前 4 颗高亮
+  - [ ] 提交时评分数值正确
+
+#### P10-UX-08 · CDN 资源本地化
+
+- **前置依赖**：无
+- **交付物**：`public/vendor/marked.min.js` + `public/vendor/purify.min.js`（新建）
+- **实现要点**：下载 marked.js 和 dompurify 到本地，HTML 中引用改为本地路径
+- **验收标准**
+  - [ ] `public/vendor/` 目录存在两个 JS 文件
+  - [ ] 断网环境下 Markdown 渲染和 XSS 清洗仍正常
+
+#### P10-ARC-03 · 审计日志异步写入
+
+- **前置依赖**：无
+- **交付物**：`services/audit-logger.js`（新建）+ `routes/chat.js` 修改
+- **实现要点**：`handleInsertSuccess`/`handleUpdateSuccess` 中的 audit_log 写入改为异步（setImmediate + 重试），不阻塞主流程
+- **验收标准**
+  - [ ] 审计日志写入失败不影响主流程响应
+  - [ ] 写入失败时有错误日志记录
+
+#### P10-FUNC-01 · 审核增加"退回修改"功能
+
+- **前置依赖**：无
+- **交付物**：`routes/review.js` + `public/index.html` + `db/migration_review_return.sql` 修改
+- **实现要点**：新增 review action `return_for_revision`，状态变为 `draft`，保留审核意见供录入员查看
+- **验收标准**
+  - [ ] 审核员可选择"退回修改"
+  - [ ] 条目状态变为 draft
+  - [ ] 录入员在"我的提交"中看到审核意见
+
+#### P10-FUNC-03 · CSV 批量导入
+
+- **前置依赖**：无
+- **交付物**：`routes/admin.js` 新增 `POST /api/admin/import`
+- **实现要点**：按模板格式上传 CSV，后台解析每行创建知识条目（状态为 pending_review）
+- **验收标准**
+  - [ ] 上传含 10 条数据的 CSV，10 个条目全部创建
+  - [ ] 格式错误的行被跳过并返回错误报告
+
+#### P10-FUNC-05 · 向量检索方案实施
+
+- **前置依赖**：P6+ P7 部署验证通过
+- **交付物**：`services/embedding.js` + `services/vector-search.js` + `routes/entries.js` 修改 + `db/migration_vector.sql`
+- **实现要点**：按 [vector-search-migration.md](./vector-search-migration.md) 方案实施：Embedding API → MySQL 向量存储 → Node.js 余弦相似度计算
+- **验收标准**
+  - [ ] 语义搜索"机器人自动取货不准"能找到相关内容
+  - [ ] Embedding API 不可用时回退到 FULLTEXT + LIKE
+  - [ ] 新条目自动生成向量
+
+#### P10-DATA-01 · 业务指标埋点
+
+- **前置依赖**：P10-ARC-03
+- **交付物**：`services/metrics.js`（新建）+ `routes/stats.js` 修改
+- **实现要点**：记录每日对话次数、新增条目数、审核通过率、活跃用户数，提供 `/api/stats/metrics` 查询
+- **验收标准**
+  - [ ] 新增 `kb_metrics` 表
+  - [ ] 每日自动聚合前一日数据
+  - [ ] `/api/stats/metrics` 返回最近 30 天趋势
+
+#### P10-DATA-02 · AI 调用指标监控
+
+- **前置依赖**：P10-DATA-01
+- **交付物**：`services/ai.js` + `routes/stats.js` 修改
+- **实现要点**：在熔断器的 recordSuccess/recordFailure 中记录耗时、成功/失败、token 用量
+- **验收标准**
+  - [ ] `/api/stats/ai-metrics` 返回 AI 调用成功率、平均耗时
+  - [ ] 异常时可快速定位 AI API 问题
+
+#### P10-EFF-01 · nodemon 监听 prompts 文件变更
+
+- **前置依赖**：无
+- **交付物**：`package.json` 修改
+- **实现要点**：nodemon.json 中 `watch` 增加 `prompts/`
+- **验收标准**
+  - [ ] `system-base.txt` 修改后服务自动重启
+
+#### P10-TEAM-02 · 添加 ESLint/Prettier 配置
+
+- **前置依赖**：无
+- **交付物**：`.eslintrc.js` + `.prettierrc`（新建）
+- **实现要点**：安装 eslint/prettier 开发依赖，添加 `npm run lint` 脚本
+- **验收标准**
+  - [ ] `npm run lint` 无 error
+  - [ ] `.prettierrc` 统一缩进/引号/分号风格
+
+---
+
+### P10 P2 优先级（21 项，下季度完成）
+
+#### P10-CQ-01 · chat.js 拆分辅助函数
+
+- **前置依赖**：P10-CQ-16
+- **交付物**：`services/chat-helpers.js`（新建）+ `routes/chat.js` 修改
+- **实现要点**：将 `detectPrimaryType`、`escapeSqlString`、`injectEntryCode`、`snapshotOldEntriesForUpdate`、`autoContinueInsert`、`handleInsertSuccess`、`handleUpdateSuccess`、`handleDeleteSuccess`、`handleSelectSuccess` 移至 helpers 文件
+- **验收标准**
+  - [ ] chat.js 仅保留路由处理逻辑
+  - [ ] 所有函数可独立测试
+
+#### P10-CQ-02 · 事务工具函数抽取
+
+- **前置依赖**：无
+- **交付物**：`utils/transaction.js`（新建）+ `routes/admin.js` 修改
+- **实现要点**：抽取 `withTransaction(pool, callback)` 工具函数，统一事务模板
+- **验收标准**
+  - [ ] admin.js 中 3 处事务代码替换为调用工具函数
+
+#### P10-CQ-03 · result 参数类型注释
+
+- **前置依赖**：无
+- **交付物**：`services/sql-executor.js` 修改
+- **实现要点**：为 `validateAndExecute` 的返回值增加 `@typedef` JSDoc 类型注释
+- **验收标准**
+  - [ ] IDE 可正确提示 result.success / result.error / result.insertId
+
+#### P10-CQ-04 · injectEntryCode 正则注释
+
+- **前置依赖**：无
+- **交付物**：`routes/chat.js` 修改
+- **实现要点**：为每个正则替换添加注释说明意图（替换哪部分 SQL）
+- **验收标准**
+  - [ ] 每个正则替换旁边有中文注释说明
+
+#### P10-CQ-06 · 审计日志失败时返回 warning
+
+- **前置依赖**：P10-ARC-03
+- **交付物**：`routes/chat.js` 修改
+- **实现要点**：`handleInsertSuccess` 等函数中 audit_log 写入失败时，在响应中附加 `warnings` 字段
+- **验收标准**
+  - [ ] 审计日志写入失败时，responseData 包含 warnings 数组
+
+#### P10-CQ-07 · WHERE 条件解析增强
+
+- **前置依赖**：无
+- **交付物**：`routes/chat.js` 修改
+- **实现要点**：`snapshotOldEntriesForUpdate` 对非 `id = N`/`entry_code = '...'` 模式的 WHERE 使用 node-sql-parser 提取值
+- **验收标准**
+  - [ ] 支持 `WHERE name = 'xxx' AND status = 'active'` 模式的快照提取
+
+#### P10-CQ-09 · LIMIT/OFFSET 参数化
+
+- **前置依赖**：无
+- **交付物**：`routes/entries.js` + `routes/review.js` + `routes/admin.js` 修改
+- **实现要点**：将 SQL 模板字符串拼接改为使用 `pool.query()`（支持参数化 LIMIT），或使用 `pool.execute()` + 数值绑定
+- **验收标准**
+  - [ ] 3 个路由文件的 LIMIT/OFFSET 统一参数化
+  - [ ] SQL 注入测试套件全绿
+
+#### P10-CQ-10 · 搜索查询优化
+
+- **前置依赖**：P10-FUNC-05（向量检索上线后可降低优先级）
+- **交付物**：`routes/entries.js` 修改
+- **实现要点**：当 MATCH AGAINST 返回足够结果时，跳过 LIKE 兜底；或增加 `search_mode` 参数
+- **验收标准**
+  - [ ] ngram 有结果时不做 LIKE 查询
+  - [ ] 支持 `?search_mode=ngram` 精确搜索模式
+
+#### P10-CQ-12 · 路由统一依赖导入
+
+- **前置依赖**：无
+- **交付物**：`routes/_base.js`（新建）
+- **实现要点**：创建 `routes/_base.js` 统一导出 `pool`、`sendSuccess`、`sendError`、`errors`、`logger`、`validatePagination`
+- **验收标准（可选优化）**
+  - [ ] 各路由文件通过 `require('./_base')` 获取公共依赖
+
+#### P10-CQ-13 · Prompt 热更新 API
+
+- **前置依赖**：P10-CQ-25
+- **交付物**：`routes/admin.js` + `services/prompt-builder.js` 修改
+- **实现要点**：新增 `POST /api/admin/reload-prompts` 管理 API，调用 `clearCache()` 重新加载 prompt 文件
+- **验收标准**
+  - [ ] API 调用后 prompt 立即生效
+  - [ ] 仅 admin 角色可调用
+
+#### P10-CQ-17 · sql-executor query vs execute 安全评估
+
+- **前置依赖**：无
+- **交付物**：`services/sql-executor.js` 注释补充
+- **实现要点**：在 `conn.query(sql)` 处增加注释说明选择 query() 的原因（AI 生成的 SQL 无法预编译参数），以及 5 层校验作为纵深防御
+- **验收标准**
+  - [ ] 代码注释清晰说明安全性分析
+
+#### P10-CQ-25 · prompt-builder 异步 IO 改造
+
+- **前置依赖**：无
+- **交付物**：`services/prompt-builder.js` 修改
+- **实现要点**：`fs.readFileSync` 改为 `fs.promises.readFile`，`getSystemContent()` 改为 async，调用方 await
+- **验收标准**
+  - [ ] `clearCache()` 运行时调用不阻塞事件循环
+  - [ ] 不影响现有 prompt 加载逻辑
+
+#### P10-UX-09 · 对话历史接近限制提示
+
+- **前置依赖**：无
+- **交付物**：`public/index.html` 修改
+- **实现要点**：在第 18 轮对话时（上限 20 轮），系统中追加一条提示消息
+- **验收标准**
+  - [ ] 用户看到"对话历史较长，较早的消息将自动清理"
+
+#### P10-UX-10 · 版本差异对比
+
+- **前置依赖**：无
+- **交付物**：`public/index.html` + `routes/entries.js` 修改
+- **实现要点**：版本详情页增加"与当前版本对比"按钮，高亮差异行
+- **验收标准**
+  - [ ] 两个版本的 full_content 差异高亮显示
+  - [ ] 新增行绿色、删除行红色
+
+#### P10-UX-11 · 审核通过后 toast 确认
+
+- **前置依赖**：无
+- **交付物**：`public/index.html` 修改
+- **实现要点**：审核通过后增加 2 秒绿色 toast "审核通过，评分已生效"
+- **验收标准**
+  - [ ] 通过后显示 toast
+  - [ ] 2 秒后自动消失
+
+#### P10-UX-12 · 删除按钮改为"归档"
+
+- **前置依赖**：无
+- **交付物**：`public/index.html` 修改
+- **实现要点**：按钮文案"删除" → "归档"，增加 tooltip "归档后条目不再显示，但数据保留可恢复"
+- **验收标准**
+  - [ ] 按钮文案为"归档"
+  - [ ] hover 时显示 tooltip
+
+#### P10-UX-13 · 用户列表搜索
+
+- **前置依赖**：无
+- **交付物**：`routes/admin.js` + `public/index.html` 修改
+- **实现要点**：管理后台用户列表增加按用户名搜索功能
+- **验收标准**
+  - [ ] 输入关键词可筛选用户列表
+  - [ ] 后端支持 `?username=` 查询参数
+
+#### P10-UX-14 · 移动端适配
+
+- **前置依赖**：无
+- **交付物**：`public/index.html` 修改
+- **实现要点**：增加移动端媒体查询，至少保证对话和知识库浏览两个 Tab 在手机上可用
+- **验收标准**
+  - [ ] 375px 宽度下 Tab1 对话可用
+  - [ ] 375px 宽度下 Tab2 知识库可用
+  - [ ] 输入框触摸友好（min-height: 44px）
+
+#### P10-UX-17 · 暗色模式手动切换
+
+- **前置依赖**：P9-T17
+- **交付物**：`public/index.html` 修改
+- **实现要点**：增加暗色/亮色/自动手动切换按钮，存储到 localStorage
+- **验收标准**
+  - [ ] 三种模式可手动切换
+  - [ ] 刷新后保持用户选择
+
+#### P10-ARC-01 · 会话存储切换到 Redis
+
+- **前置依赖**：P9-T20
+- **交付物**：配置文档
+- **实现要点**：生产环境设置 `SESSION_STORE=redis`，配置 Redis 连接参数，验证多实例会话共享
+- **验收标准**
+  - [ ] 两个服务实例共享同一 Redis 会话
+  - [ ] A 实例创建的会话在 B 实例可读取
+
+#### P10-ARC-02 · 废弃非流式端点
+
+- **前置依赖**：P10-CQ-16 + P10-UX-16
+- **交付物**：`routes/chat.js` + `public/index.html` 修改
+- **实现要点**：前端统一使用流式端点，非流式 `/api/chat` 保留但标记 deprecated
+- **验收标准**
+  - [ ] 前端 sendChat 仅调用 /api/chat/stream
+  - [ ] /api/chat 仍可用但 JSDoc 标记 @deprecated
+
+#### P10-FUNC-02 · 知识关联图谱
+
+- **前置依赖**：P10-FUNC-05
+- **交付物**：`db/migration_kb_relations.sql` + `routes/entries.js` + `public/index.html`
+- **实现要点**：新增 `kb_entry_relations` 表，AI 录入和查询时自动推荐关联条目，前端展示关联链接
+- **验收标准**
+  - [ ] 条目详情页显示关联条目
+  - [ ] AI 查询时附带推荐相关知识
+
+#### P10-FUNC-04 · 版本恢复
+
+- **前置依赖**：无
+- **交付物**：`routes/admin.js` + `public/index.html` 修改
+- **实现要点**：版本详情页增加"恢复此版本"按钮，将快照写回 full_content
+- **验收标准**
+  - [ ] 恢复后条目内容变为历史版本内容
+  - [ ] 恢复操作生成新的版本记录
+
+#### P10-EFF-02 · 前端文件拆分
+
+- **前置依赖**：P10-TECH-01
+- **交付物**：`public/js/` 目录结构
+- **实现要点**：将 index.html 中的 JS 按 Tab 拆分为独立模块（chat.js、kb.js、review.js、admin.js、stats.js），构建时合并
+- **验收标准**
+  - [ ] 拆分后构建产物与原始 index.html 功能一致
+  - [ ] 开发时可单独调试各模块
+
+#### P10-TECH-01 · 前端 JS 模块化
+
+- **前置依赖**：P10-EFF-02
+- **交付物**：前端模块化方案
+- **实现要点**：将 2000+ 行 index.html 中的 JS 按功能拆分为多个文件（chat.js、kb.js、review.js、admin.js、stats.js），用简单拼接脚本合并部署
+- **验收标准**
+  - [ ] 拆分后的构建产物功能不变
+
+#### P10-TECH-02 · SQL 解析器选型评估
+
+- **前置依赖**：无
+- **交付物**：技术评估文档
+- **实现要点**：评估 node-sql-parser 4.x 的 MySQL 方言支持情况，对比 pgsql-ast-parser 或自定义解析器
+- **验收标准**
+  - [ ] 输出评估报告（当前解析器能力、已知缺陷、替代方案对比）
+
+#### P10-TEAM-01 · 前后端目录分离
+
+- **前置依赖**：P10-EFF-02
+- **交付物**：`kb-client/` 目录
+- **实现要点**：前端 index.html + public/ 移到 `kb-client/`，server.js 指向新目录
+- **验收标准**
+  - [ ] 前端可独立开发和构建
+  - [ ] 后端 static 路径指向 kb-client
+
+#### P10-COMP-01 · 条目评论功能
+
+- **前置依赖**：无
+- **交付物**：`db/migration_kb_comments.sql` + `routes/entries.js` + `public/index.html`
+- **实现要点**：条目详情页下方增加评论区域（`kb_entry_comments` 表），支持审核员和录入员讨论
+- **验收标准**
+  - [ ] 可对条目添加评论
+  - [ ] 评论按时间排序显示
+  - [ ] 录入员收到评论通知
+
+#### P10-COMP-02 · 核心优势文档化
+
+- **前置依赖**：无
+- **交付物**：README.md 或产品介绍文档
+- **实现要点**：在项目文档中突出 AI 直写 SQL、流式对话、深度思考展示等差异化优势
+- **验收标准**
+  - [ ] 文档中包含核心优势章节
+
+
+## 十六、进度追踪表
 
 > 每完成一个任务，在「状态」列填写 `完成` 或 `✅`，并记录完成日期。
 
@@ -2081,10 +2558,61 @@ module.exports = {
 | P9-T29 | ai.js OR 应为 AND | ✅ | 2026-07-28 | Bug/P3：|| 改为 && |
 | P9-T30 | SQL 注入：LIMIT 拼接 | ✅ | 2026-07-28 | P1 安全：添加注释 + 验证无实际风险 |
 | P9-T31 | LIMIT/OFFSET 非负整数校验 | ✅ | 2026-07-29 | P1 安全：validatePagination() 统一校验 5 处 |
+| P10-CQ-05 | autoContinueInsert 错误反馈 | ⬜ | - | P0：失败时静默返回 null → 明确错误信息 |
+| P10-CQ-16 | chat.js 流式/非流式代码抽取 | ⬜ | - | P0：200 行重复代码 → chat-processor.js 共享 |
+| P10-UX-16 | SSE 流中断错误提示+重试 | ⬜ | - | P0：半截消息 → 友好提示+重发按钮 |
+| P10-CQ-14 | chat.js 纯函数单元测试 | ⬜ | - | P1：detectPrimaryType 等无测试覆盖 |
+| P10-CQ-15 | 防暴力破解逻辑测试 | ⬜ | - | P1：5次锁定/锁定期间拒绝/重置 |
+| P10-CQ-27 | 熔断器状态转换测试 | ⬜ | - | P1：Closed→Open→HalfOpen→Closed |
+| P10-CQ-08 | CORS 生产环境收紧 | ⬜ | - | P1：* → ALLOWED_ORIGINS 环境变量 |
+| P10-CQ-19 | 优雅关闭竞态修复 | ⬜ | - | P1：server.close 回调中 pool.end |
+| P10-CQ-24 | CSV 导出流式查询 | ⬜ | - | P1：全量加载 → pool.stream() |
+| P10-UX-04 | 语音输入浏览器兼容检测 | ⬜ | - | P1：不支持时隐藏/提示 |
+| P10-UX-05 | 错误消息分类友好提示 | ⬜ | - | P1：技术错误 → 用户可理解文案 |
+| P10-UX-06 | 搜索空状态引导文案 | ⬜ | - | P1："暂无数据" → 明确引导 |
+| P10-UX-07 | 六维评分星级组件 | ⬜ | - | P1：下拉选择 → 五星评分 |
+| P10-UX-08 | CDN 资源本地化 | ⬜ | - | P1：marked.js+DOMPurify 本地部署 |
+| P10-ARC-03 | 审计日志异步写入 | ⬜ | - | P1：同步阻塞 → setImmediate+重试 |
+| P10-FUNC-01 | 审核"退回修改"功能 | ⬜ | - | P1：新增 return_for_revision action |
+| P10-FUNC-03 | CSV 批量导入 | ⬜ | - | P1：POST /api/admin/import |
+| P10-FUNC-05 | 向量检索方案实施 | ⬜ | - | P1：Embedding+余弦相似度回退FULLTEXT |
+| P10-DATA-01 | 业务指标埋点 | ⬜ | - | P1：每日对话/新增/审核/活跃统计 |
+| P10-DATA-02 | AI 调用指标监控 | ⬜ | - | P1：成功率/耗时/token 用量 |
+| P10-EFF-01 | nodemon 监听 prompts | ⬜ | - | P1：修改 system-base.txt 自动重启 |
+| P10-TEAM-02 | ESLint/Prettier 配置 | ⬜ | - | P1：统一代码风格 |
+| P10-CQ-01 | chat.js 拆分辅助函数 | ⬜ | - | P2：9 个辅助函数 → chat-helpers.js |
+| P10-CQ-02 | 事务工具函数抽取 | ⬜ | - | P2：withTransaction() 统一模板 |
+| P10-CQ-03 | result 参数类型注释 | ⬜ | - | P2：@typedef 增强 IDE 提示 |
+| P10-CQ-04 | injectEntryCode 正则注释 | ⬜ | - | P2：每个正则替换旁加中文注释 |
+| P10-CQ-06 | 审计日志失败返回 warning | ⬜ | - | P2：responseData.warnings 告知用户 |
+| P10-CQ-07 | WHERE 条件解析增强 | ⬜ | - | P2：支持多条件 WHERE 快照提取 |
+| P10-CQ-09 | LIMIT/OFFSET 参数化 | ⬜ | - | P2：模板字符串 → pool.query() 参数化 |
+| P10-CQ-10 | 搜索查询优化 | ⬜ | - | P2：MATCH 有结果时跳过 LIKE |
+| P10-CQ-12 | 路由统一依赖导入 | ⬜ | - | P2：routes/_base.js 统一导出 |
+| P10-CQ-13 | Prompt 热更新 API | ⬜ | - | P2：POST /api/admin/reload-prompts |
+| P10-CQ-17 | query vs execute 安全评估 | ⬜ | - | P2：注释说明使用 query() 原因 |
+| P10-CQ-25 | prompt-builder 异步 IO | ⬜ | - | P2：readFileSync → promises.readFile |
+| P10-UX-09 | 对话历史接近限制提示 | ⬜ | - | P2：第18轮时系统追加提示 |
+| P10-UX-10 | 版本差异对比 | ⬜ | - | P2：两个版本 full_content 差异高亮 |
+| P10-UX-11 | 审核通过后 toast 确认 | ⬜ | - | P2：2秒绿色 toast"评分已生效" |
+| P10-UX-12 | 删除按钮改为"归档" | ⬜ | - | P2：按钮文案+tooltip 说明 |
+| P10-UX-13 | 用户列表搜索 | ⬜ | - | P2：管理后台用户名搜索 |
+| P10-UX-14 | 移动端适配 | ⬜ | - | P2：375px 下对话+知识库可用 |
+| P10-UX-17 | 暗色模式手动切换 | ⬜ | - | P2：暗色/亮色/自动+localStorage |
+| P10-ARC-01 | 生产环境 Redis 会话 | ⬜ | - | P2：SESSION_STORE=redis 验证多实例 |
+| P10-ARC-02 | 废弃非流式端点 | ⬜ | - | P2：前端统一用 /chat/stream |
+| P10-FUNC-02 | 知识关联图谱 | ⬜ | - | P2：关联表+AI 推荐+前端展示 |
+| P10-FUNC-04 | 版本恢复 | ⬜ | - | P2：历史版本一键恢复 |
+| P10-EFF-02 | 前端文件拆分 | ⬜ | - | P2：2000行 index.html → 模块化 |
+| P10-TECH-01 | 前端 JS 模块化 | ⬜ | - | P2：按 Tab 拆分+构建拼接 |
+| P10-TECH-02 | SQL 解析器选型评估 | ⬜ | - | P2：node-sql-parser vs 替代方案 |
+| P10-TEAM-01 | 前后端目录分离 | ⬜ | - | P2：kb-client/ 独立目录 |
+| P10-COMP-01 | 条目评论功能 | ⬜ | - | P2：评论表+详情页评论区域 |
+| P10-COMP-02 | 核心优势文档化 | ⬜ | - | P2：README 突出 AI 直写 SQL 优势 |
 
 ---
 
-## 十四、变更记录
+## 十五、变更记录
 
 | 版本 | 日期 | 变更内容 | 作者 |
 |------|------|---------|------|
@@ -2103,6 +2631,7 @@ module.exports = {
 | v1.12 | 2026-07-29 | P9 新增：P9-T11 Winston 结构化日志（8 文件 47 处替换）| 93% |
 | v1.13 | 2026-07-29 | P9 新增：P9-T19 AI 熔断器 + P9-T17 暗色模式 + P9-T20 多实例部署（会话存储抽象层）；全部 31 项 100% | 100% |
 | v1.14 | 2026-07-29 | P7-T3 上线联调：端到端测试 22/23 通过 + mysqldump 定时备份脚本；全部 74 个任务 100% | 100% |
+| v2.0  | 2026-07-29 | 新增 P10 第2次审查优化阶段（43 项任务，分为 P0/P1/P2 三个优先级批次）；总任务数 117 | 63% |
 
 ---
 
