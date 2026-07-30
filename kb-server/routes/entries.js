@@ -12,6 +12,8 @@ const errors = require('../utils/errors');
 const { authRequired } = require('../middleware/auth');
 const { validatePagination } = require('../utils/pagination'); // P9-T31
 const { createModuleLogger } = require('../services/logger');
+const vectorSearch = require('../services/vector-search');
+const vectorStore = require('../services/vector-store');
 
 const logger = createModuleLogger('entries');
 
@@ -41,13 +43,34 @@ router.get('/', async (req, res) => {
     const conditions = [];
     const params = [];
 
-    if (q && typeof q === 'string' && q.trim() !== '') {
-      conditions.push('(MATCH(title, summary, full_content) AGAINST(? IN NATURAL LANGUAGE MODE) OR title LIKE ? OR summary LIKE ?)');
-      const likePattern = `%${q.trim()}%`;
-      params.push(q.trim(), likePattern, likePattern);
-    }
-
     const hasSearch = !!(q && typeof q === 'string' && q.trim() !== '');
+    let vectorIds = null; // 非 null 表示向量检索成功，值为按相似度降序的条目 ID 数组
+
+    if (hasSearch) {
+      // 向量库为空时直接走 FULLTEXT，避免返回空结果
+      if (vectorStore.getVectorCount() === 0) {
+        conditions.push('(MATCH(title, summary, full_content) AGAINST(? IN NATURAL LANGUAGE MODE) OR title LIKE ? OR summary LIKE ?)');
+        const likePattern = `%${q.trim()}%`;
+        params.push(q.trim(), likePattern, likePattern);
+      } else {
+        try {
+          const vectorResults = await vectorSearch.search(q.trim(), 50);
+          if (vectorResults.length > 0) {
+            vectorIds = vectorResults.map(r => r.entryId);
+            conditions.push(`id IN (${vectorIds.join(',')})`);
+          } else {
+            // 向量检索无结果，设置不可能条件避免返回全表
+            conditions.push('1=0');
+          }
+        } catch (e) {
+          // 降级：Embedding API 不可用时回退到 FULLTEXT + LIKE
+          console.warn('[entries] 向量检索失败，回退全文检索:', e.message);
+          conditions.push('(MATCH(title, summary, full_content) AGAINST(? IN NATURAL LANGUAGE MODE) OR title LIKE ? OR summary LIKE ?)');
+          const likePattern = `%${q.trim()}%`;
+          params.push(q.trim(), likePattern, likePattern);
+        }
+      }
+    }
 
     if (knowledge_type) {
       conditions.push('knowledge_type = ?');
@@ -98,10 +121,23 @@ router.get('/', async (req, res) => {
     const [countRows] = await pool.execute(countSql, params);
     const total = countRows[0].total;
 
-    // 当有搜索词时，添加 MATCH 相关性评分字段（P9-T13：ngram 分词）
-    const relevanceSelect = hasSearch
+    // 相关性字段：仅在使用 FULLTEXT 时添加 MATCH 评分
+    const relevanceSelect = (hasSearch && vectorIds === null)
       ? ', MATCH(title, summary, full_content) AGAINST(? IN NATURAL LANGUAGE MODE) AS relevance'
       : '';
+
+    // 排序策略：
+    // - 向量检索成功：按 FIELD(id, ...) 保持相似度降序
+    // - FULLTEXT 降级：按 relevance 降序，再按用户指定排序
+    // - 无搜索词：按用户指定排序
+    let orderByClause;
+    if (vectorIds !== null) {
+      orderByClause = `ORDER BY FIELD(id, ${vectorIds.join(',')})`;
+    } else if (hasSearch) {
+      orderByClause = `ORDER BY relevance DESC, ${sortField} ${sortOrder}`;
+    } else {
+      orderByClause = `ORDER BY ${sortField} ${sortOrder}`;
+    }
 
     const listSql = `
       SELECT id, entry_code, title, knowledge_type, architecture_layer, scene,
@@ -109,12 +145,12 @@ router.get('/', async (req, res) => {
              created_by, reviewer_id, created_at, updated_at, reviewed_at${relevanceSelect}
       FROM kb_entries
       ${whereClause}
-      ORDER BY ${hasSearch ? 'relevance DESC, ' : ''}${sortField} ${sortOrder}
+      ${orderByClause}
       LIMIT ${limitNum} OFFSET ${offset}
     `;
 
-    // 搜索词参数需在 listSql 中再次传递（用于 relevance 计算）
-    const listParams = hasSearch ? [q.trim(), ...params] : params;
+    // 仅 FULLTEXT 时需要额外传递搜索词参数给 relevance 计算
+    const listParams = (hasSearch && vectorIds === null) ? [q.trim(), ...params] : params;
     const [rows] = await pool.execute(listSql, listParams);
 
     // 格式化输出（去除 full_content 等大字段，列表不需要）

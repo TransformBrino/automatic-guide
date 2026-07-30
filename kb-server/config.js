@@ -44,6 +44,14 @@ const config = {
     maxRetries: 1, // 最多重试 1 次
     enableWebSearch: process.env.ENABLE_WEB_SEARCH === 'true' || false,
     enableThinking: process.env.ENABLE_THINKING === 'true' || false,
+    // Embedding API 端点（可选），不配置时从 apiUrl 自动推导
+    embeddingApiUrl: process.env.EMBEDDING_API_URL || '',
+    // Embedding API Key（可选），不配置时复用 apiKey
+    embeddingApiKey: process.env.EMBEDDING_API_KEY || '',
+    // Embedding 模型（可选），不配置时按候选列表自动探测
+    embeddingModel: process.env.EMBEDDING_MODEL || '',
+    // 候选模型列表（启动探测用，可通过逗号分隔的环境变量覆盖）
+    embeddingModelCandidates: (process.env.EMBEDDING_MODEL_CANDIDATES || 'deepseek-embedding,text-embedding-3-small').split(','),
   },
   // JWT
   jwt: {

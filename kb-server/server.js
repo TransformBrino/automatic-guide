@@ -174,6 +174,14 @@ app.use((err, req, res, next) => {
   sendError(res, errors.INTERNAL_ERROR, msg);
 });
 
+// ---------- 向量存储初始化（从 MySQL 加载向量到内存 + 启动定时同步） ----------
+const vectorStore = require('./services/vector-store');
+vectorStore.startVectorStore().then(() => {
+  console.log('[server] 向量存储初始化完成');
+}).catch(err => {
+  console.error('[server] 向量存储初始化失败:', err.message);
+});
+
 // ---------- 启动服务 ----------
 const server = app.listen(config.port, () => {
   logger.info(`服务已启动，监听端口 ${config.port}`);

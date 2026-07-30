@@ -126,3 +126,20 @@ CREATE TABLE IF NOT EXISTS kb_code_sequence (
   date_key VARCHAR(8) PRIMARY KEY,
   seq      INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='编码序列表';
+
+-- ------------------------------------------------------------
+-- 表 7：kb_entry_embeddings（条目向量表）
+-- 向量检索改造新增，存储条目的 Embedding 向量
+-- entry_id 与 kb_entries 1:1，ON DELETE CASCADE
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kb_entry_embeddings (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  entry_id    INT NOT NULL,
+  embedding   JSON NOT NULL COMMENT '向量数组，如 [0.0123, -0.0456, 0.0789, ...]',
+  dimension   SMALLINT NOT NULL DEFAULT 0 COMMENT '向量维度（由 Embedding 模型决定）',
+  model       VARCHAR(50) NOT NULL COMMENT 'Embedding 模型名',
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_entry_id (entry_id),
+  FOREIGN KEY (entry_id) REFERENCES kb_entries(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='条目向量表';

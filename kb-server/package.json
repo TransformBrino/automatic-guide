@@ -8,7 +8,8 @@
     "dev": "nodemon server.js",
     "init-admin": "node scripts/init-admin.js",
     "test-ai": "node scripts/test-ai-connection.js",
-    "test-sql": "node test/sql-executor.test.js"
+    "test-sql": "node test/sql-executor.test.js",
+    "generate-embeddings": "node scripts/generate-embeddings.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

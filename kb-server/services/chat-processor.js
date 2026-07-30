@@ -139,7 +139,7 @@ async function processChatResult({
       responseData = await h.handleUpdateSuccess(result, oldEntries, user, clientIp, replyText);
       break;
     case 'delete':
-      responseData = await h.handleDeleteSuccess(result, user, clientIp, replyText);
+      responseData = await h.handleDeleteSuccess(result, user, clientIp, replyText, sqlStatements);
       break;
     case 'select':
     default:

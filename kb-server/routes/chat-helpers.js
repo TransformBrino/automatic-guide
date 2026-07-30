@@ -7,6 +7,8 @@ const pool = require('../db/connection');
 const ai = require('../services/ai');
 const sqlExecutor = require('../services/sql-executor');
 const { createModuleLogger } = require('../services/logger');
+const embedding = require('../services/embedding');
+const vectorStore = require('../services/vector-store');
 
 const logger = createModuleLogger('chat-helpers');
 
@@ -170,6 +172,26 @@ async function handleInsertSuccess(result, user, ip, replyText) {
     }
   }
 
+  // 异步生成向量（不阻塞主流程响应）
+  setImmediate(async () => {
+    try {
+      if (!insertId) return;
+      const [rows] = await pool.execute(
+        'SELECT id, title, summary, full_content FROM kb_entries WHERE id = ?',
+        [insertId]
+      );
+      if (rows.length > 0) {
+        const text = `${rows[0].title}\n\n${rows[0].summary}\n\n${rows[0].full_content}`;
+        const vec = await embedding.getEmbedding(text);
+        const embConfig = embedding.getEmbeddingConfig();
+        await vectorStore.setVector(insertId, vec, vec.length, embConfig.model);
+        console.log(`[chat] 向量已生成 (entryId=${insertId})`);
+      }
+    } catch (e) {
+      console.error('[chat] 异步生成向量失败 (entryId=%d):', insertId, e.message);
+    }
+  });
+
   return { type: 'entry_created', entry, message: replyText };
 }
 
@@ -195,6 +217,25 @@ async function handleUpdateSuccess(result, oldEntries, user, ip, replyText) {
     } catch (e) {
       logger.error('写 audit_log(update) 失败', { error: e.message });
     }
+
+    // 异步更新向量
+    setImmediate(async () => {
+      try {
+        const [rows] = await pool.execute(
+          'SELECT id, title, summary, full_content FROM kb_entries WHERE id = ?',
+          [old.id]
+        );
+        if (rows.length > 0) {
+          const text = `${rows[0].title}\n\n${rows[0].summary}\n\n${rows[0].full_content}`;
+          const vec = await embedding.getEmbedding(text);
+          const embConfig = embedding.getEmbeddingConfig();
+          await vectorStore.setVector(old.id, vec, vec.length, embConfig.model);
+          console.log(`[chat] 向量已更新 (entryId=${old.id})`);
+        }
+      } catch (e) {
+        console.error('[chat] 异步更新向量失败 (entryId=%d):', old.id, e.message);
+      }
+    });
   }
 
   return {
@@ -207,9 +248,9 @@ async function handleUpdateSuccess(result, oldEntries, user, ip, replyText) {
 }
 
 /**
- * 处理 DELETE 成功：写 audit_log(delete)
+ * 处理 DELETE 成功：写 audit_log(delete)，清理向量
  */
-async function handleDeleteSuccess(result, user, ip, replyText) {
+async function handleDeleteSuccess(result, user, ip, replyText, sqlStatements) {
   try {
     await pool.execute(
       'INSERT INTO kb_audit_log (entry_id, action, operator, detail, ip_address) VALUES (?, ?, ?, ?, ?)',
@@ -218,6 +259,17 @@ async function handleDeleteSuccess(result, user, ip, replyText) {
   } catch (e) {
     logger.error('写 audit_log(delete) 失败', { error: e.message });
   }
+
+  // 从 DELETE 语句中提取被删除条目 ID，清理向量
+  const deletedIds = [];
+  for (const sql of (sqlStatements || [])) {
+    const idMatch = sql.match(/WHERE\s+id\s*=\s*(\d+)/i);
+    if (idMatch) deletedIds.push(parseInt(idMatch[1], 10));
+  }
+  for (const id of deletedIds) {
+    await vectorStore.deleteVector(id);
+  }
+
   return { type: 'entry_deleted', message: replyText };
 }
 

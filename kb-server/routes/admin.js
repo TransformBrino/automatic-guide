@@ -14,6 +14,7 @@ const { authRequired, requireRole } = require('../middleware/auth');
 const { validatePassword } = require('../utils/password'); // P9-T16
 const { validatePagination } = require('../utils/pagination'); // P9-T31
 const { createModuleLogger } = require('../services/logger');
+const vectorStore = require('../services/vector-store');
 
 const logger = createModuleLogger('admin');
 
@@ -61,6 +62,9 @@ router.delete('/entries/:id', async (req, res) => {
     );
 
     await conn.commit();
+
+    // 清理向量缓存
+    await vectorStore.deleteVector(id);
 
     return sendSuccess(res, {
       deleted: true,
@@ -126,6 +130,9 @@ router.post('/entries/:id/archive', async (req, res) => {
     );
 
     await conn.commit();
+
+    // 清理向量缓存
+    await vectorStore.deleteVector(id);
 
     return sendSuccess(res, {
       archived: true,
